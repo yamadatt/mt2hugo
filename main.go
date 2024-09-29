@@ -33,28 +33,40 @@ func readExportFile(filePath string) ([]string, error) {
 func parseMovableTypeExportFile(lines []string) []map[string]string {
 	var articles []map[string]string
 	var article map[string]string
+	var bodyContent []string
+	inBody := false
 
 	for _, line := range lines {
 		if line == "--------" {
 			if article != nil {
+				article["BODY"] = strings.Join(bodyContent, "\n")
 				articles = append(articles, article)
 			}
 			article = make(map[string]string)
+			bodyContent = nil
+			inBody = false
 		} else {
-			parts := strings.SplitN(line, ": ", 2)
-			if len(parts) == 2 {
-				if article == nil {
-					article = make(map[string]string)
+			if inBody {
+				bodyContent = append(bodyContent, line)
+			} else {
+				parts := strings.SplitN(line, ": ", 2)
+				if len(parts) == 2 {
+					if article == nil {
+						article = make(map[string]string)
+					}
+					article[parts[0]] = parts[1]
+					if parts[0] == "BODY" {
+						inBody = true
+					}
+				} else if len(parts) == 1 && parts[0] == "" {
+					continue
 				}
-				article[parts[0]] = parts[1]
-				// Handle empty lines
-			} else if len(parts) == 1 && parts[0] == "" {
-				continue
 			}
 		}
 	}
 
 	if article != nil {
+		article["BODY"] = strings.Join(bodyContent, "\n")
 		articles = append(articles, article)
 	}
 
