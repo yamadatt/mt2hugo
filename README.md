@@ -1,0 +1,2 @@
+# mt2hugo
+movable typeのエクスポートファイルからhugoのファイルを作成する
