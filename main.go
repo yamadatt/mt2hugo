@@ -44,6 +44,9 @@ func parseExportFile(lines []string) []map[string]string {
 			parts := strings.SplitN(line, ": ", 2)
 			if len(parts) == 2 {
 				article[parts[0]] = parts[1]
+				// Handle empty lines
+			} else if len(parts) == 1 && parts[0] == "" {
+				continue
 			}
 		}
 	}
@@ -58,7 +61,10 @@ func parseExportFile(lines []string) []map[string]string {
 // Create a directory for each article and write the Hugo file
 func createHugoFiles(articles []map[string]string) error {
 	for _, article := range articles {
-		title := article["TITLE"]
+		title, ok := article["TITLE"]
+		if !ok {
+			return fmt.Errorf("missing TITLE field in article")
+		}
 		dirName := strings.ReplaceAll(title, " ", "_")
 		dirPath := filepath.Join("output", dirName)
 
