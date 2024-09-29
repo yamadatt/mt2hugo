@@ -29,8 +29,8 @@ func readExportFile(filePath string) ([]string, error) {
 	return lines, nil
 }
 
-// Parse the mobably type export file and extract article data
-func parseExportFile(lines []string) []map[string]string {
+// Parse the MovableType export file and extract article data
+func parseMovableTypeExportFile(lines []string) []map[string]string {
 	var articles []map[string]string
 	var article map[string]string
 
@@ -56,6 +56,21 @@ func parseExportFile(lines []string) []map[string]string {
 
 	if article != nil {
 		articles = append(articles, article)
+	}
+
+	// Output the specified debug items to standard output
+	for _, article := range articles {
+		fmt.Println("AUTHOR:", article["AUTHOR"])
+		fmt.Println("TITLE:", article["TITLE"])
+		fmt.Println("BASENAME:", article["BASENAME"])
+		fmt.Println("STATUS:", article["STATUS"])
+		fmt.Println("ALLOW COMMENTS:", article["ALLOW COMMENTS"])
+		fmt.Println("CONVERT BREAKS:", article["CONVERT BREAKS"])
+		fmt.Println("DATE:", article["DATE"])
+		fmt.Println("CATEGORY:", article["CATEGORY"])
+		fmt.Println("IMAGE:", article["IMAGE"])
+		fmt.Println("BODY:", article["BODY"])
+		fmt.Println("--------")
 	}
 
 	return articles
@@ -108,7 +123,7 @@ func main() {
 		return
 	}
 
-	articles := parseExportFile(lines)
+	articles := parseMovableTypeExportFile(lines)
 	if err := createHugoFiles(articles); err != nil {
 		fmt.Println("Error creating Hugo files:", err)
 	}
