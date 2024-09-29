@@ -43,6 +43,9 @@ func parseExportFile(lines []string) []map[string]string {
 		} else {
 			parts := strings.SplitN(line, ": ", 2)
 			if len(parts) == 2 {
+				if article == nil {
+					article = make(map[string]string)
+				}
 				article[parts[0]] = parts[1]
 				// Handle empty lines
 			} else if len(parts) == 1 && parts[0] == "" {
