@@ -19,7 +19,7 @@ go run main.go <path_to_movable_type_export_file>
 - 「TITLE」フィールドが欠けている場合、エラーが発生します。
 - Movable Typeエクスポートファイルに空行が含まれている場合、それらは無視されます。
 
-## パーサーパッケージ
+## movabletypeパッケージ
 
-- Movable Typeエクスポートファイルのパース処理は、`parser`パッケージに分離されています。
-- `parser`パッケージは、`parser/parser.go`ファイルに実装されています。
+- Movable Typeエクスポートファイルのパース処理は、`movabletype`パッケージに分離されています。
+- `movabletype`パッケージは、`github.com/yamadatt/movabletype`リポジトリに実装されています。

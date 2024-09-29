@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"parser"
+	"github.com/yamadatt/movabletype"
 )
 
 // Create a directory for each article and write the Hugo file
@@ -50,13 +50,13 @@ func main() {
 	}
 
 	filePath := os.Args[1]
-	lines, err := parser.readExportFile(filePath)
+	lines, err := movabletype.ReadExportFile(filePath)
 	if err != nil {
 		fmt.Println("Error reading export file:", err)
 		return
 	}
 
-	articles := parser.parseMovableTypeExportFile(lines)
+	articles := movabletype.ParseMovableTypeExportFile(lines)
 	if err := createHugoFiles(articles); err != nil {
 		fmt.Println("Error creating Hugo files:", err)
 	}
