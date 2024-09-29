@@ -18,3 +18,8 @@ go run main.go <path_to_movable_type_export_file>
 - Movable Typeエクスポートファイルには必ず「TITLE」フィールドが含まれている必要があります。
 - 「TITLE」フィールドが欠けている場合、エラーが発生します。
 - Movable Typeエクスポートファイルに空行が含まれている場合、それらは無視されます。
+
+## パーサーパッケージ
+
+- Movable Typeエクスポートファイルのパース処理は、`parser`パッケージに分離されています。
+- `parser`パッケージは、`parser/parser.go`ファイルに実装されています。
