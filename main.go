@@ -40,35 +40,52 @@ type HugoArticle struct {
 	Content  string
 }
 
-// 各記事用のディレクトリを作成し、Hugoファイルを書き込む
-func createHugoFiles(articles []MovableTypeArticle) error {
-	// HTMLをMarkdownに変換するコンバーターを初期化
-	converter := initializeConverter()
+// ファイルシステム操作のインターフェース定義
+type FileSystem interface {
+	ReadFile(path string) ([]string, error)
+	WriteFile(path string, content string) error
+	MkdirAll(path string) error
+}
 
-	// テンプレートを解析
-	tmpl, err := loadTemplate("templates/hugo.tmpl")
+// 実際のファイルシステム操作の実装
+type RealFileSystem struct{}
+
+func (fs *RealFileSystem) ReadFile(path string) ([]string, error) {
+	return ReadExportFile(path)
+}
+
+func (fs *RealFileSystem) WriteFile(path string, content string) error {
+	file, err := os.Create(path)
 	if err != nil {
 		return err
 	}
+	defer file.Close()
 
-	for _, article := range articles {
-		if err := processArticle(article, converter, tmpl); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	_, err = file.WriteString(content)
+	return err
 }
 
-// HTMLをMarkdownに変換するコンバーターを初期化
-func initializeConverter() *md.Converter {
+func (fs *RealFileSystem) MkdirAll(path string) error {
+	return os.MkdirAll(path, os.ModePerm)
+}
+
+// コンバーター操作のインターフェース定義
+type Converter interface {
+	ConvertHTMLToMarkdown(html string) (string, error)
+}
+
+// 実際のコンバーター実装
+type HTMLToMarkdownConverter struct {
+	converter *md.Converter
+}
+
+func NewHTMLToMarkdownConverter() *HTMLToMarkdownConverter {
 	converter := md.NewConverter("", true, nil)
 
 	// 「class="keyword"」を持つリンクのカスタムルールを追加
 	converter.AddRules(md.Rule{
 		Filter: []string{"a"},
 		Replacement: func(content string, selec *goquery.Selection, options *md.Options) *string {
-			// クラス属性がkeywordのリンクをチェック
 			if selec.HasClass("keyword") {
 				return &content
 			}
@@ -76,23 +93,58 @@ func initializeConverter() *md.Converter {
 		},
 	})
 
-	// プラグインを追加（テーブルなどの変換を改善）
 	converter.Use(plugin.GitHubFlavored())
 
-	return converter
-}
-
-// テンプレートを読み込む
-func loadTemplate(templatePath string) (*template.Template, error) {
-	tmpl, err := template.ParseFiles(templatePath)
-	if err != nil {
-		return nil, fmt.Errorf("テンプレート解析エラー: %v", err)
+	return &HTMLToMarkdownConverter{
+		converter: converter,
 	}
-	return tmpl, nil
 }
 
-// 単一記事を処理する
-func processArticle(article MovableTypeArticle, converter *md.Converter, tmpl *template.Template) error {
+func (c *HTMLToMarkdownConverter) ConvertHTMLToMarkdown(html string) (string, error) {
+	return c.converter.ConvertString(html)
+}
+
+// アプリケーションのメイン処理を担当する構造体
+type HugoConverter struct {
+	fs        FileSystem
+	converter Converter
+	tmpl      *template.Template
+}
+
+func NewHugoConverter(fs FileSystem, converter Converter, tmpl *template.Template) *HugoConverter {
+	return &HugoConverter{
+		fs:        fs,
+		converter: converter,
+		tmpl:      tmpl,
+	}
+}
+
+// ファイル変換のメイン処理
+func (h *HugoConverter) Convert(inputPath string, outputBaseDir string) error {
+	// ファイル読み込み
+	lines, err := h.fs.ReadFile(inputPath)
+	if err != nil {
+		return fmt.Errorf("エクスポートファイル読み込みエラー: %v", err)
+	}
+
+	// パース処理
+	articleMaps := ParseMovableTypeExportFile(lines)
+	articles := convertToArticleStructs(articleMaps)
+
+	fmt.Printf("処理対象記事数: %d\n", len(articles))
+
+	// 記事ごとに処理
+	for _, article := range articles {
+		if err := h.processArticle(article, outputBaseDir); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// 単一記事の処理
+func (h *HugoConverter) processArticle(article MovableTypeArticle, outputBaseDir string) error {
 	// 日付情報の取得
 	if article.Date == "" {
 		fmt.Println("警告: DATEフィールドがない記事をスキップします")
@@ -106,38 +158,42 @@ func processArticle(article MovableTypeArticle, converter *md.Converter, tmpl *t
 		return nil
 	}
 
-	// ファイルとディレクトリを準備
-	filePath, err := prepareOutputDirectory(t)
-	if err != nil {
-		return err
+	// 出力ディレクトリパスを生成
+	dirName := formatDirName(t)
+	dirPath := filepath.Join(outputBaseDir, dirName)
+
+	// ディレクトリを作成
+	if err := h.fs.MkdirAll(dirPath); err != nil {
+		return fmt.Errorf("ディレクトリ作成エラー: %v", err)
 	}
 
-	// Hugoデータを準備
-	hugoData := prepareHugoData(article, t)
+	// Hugoデータの準備
+	hugoData := h.prepareHugoData(article, t)
 
 	// 本文の処理
 	if article.Body != "" {
-		hugoData.Content = convertBody(article.Body, converter)
+		markdown, err := h.converter.ConvertHTMLToMarkdown(article.Body)
+		if err != nil {
+			fmt.Println("警告: HTML→Markdown変換エラー:", err)
+			hugoData.Content = article.Body
+		} else {
+			hugoData.Content = markdown
+		}
 	}
 
-	// ファイルに書き込む
-	return writeArticleToFile(filePath, hugoData, tmpl)
-}
-
-// 出力ディレクトリを準備し、ファイルパスを返す
-func prepareOutputDirectory(t time.Time) (string, error) {
-	dirName := formatDirName(t)
-	dirPath := filepath.Join("output", dirName)
-
-	if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
-		return "", err
+	// テンプレートを使って出力内容を生成
+	var output strings.Builder
+	if err := h.tmpl.Execute(&output, hugoData); err != nil {
+		return fmt.Errorf("テンプレート実行エラー: %v", err)
 	}
 
-	return filepath.Join(dirPath, "index.md"), nil
+	// ファイルに書き込み
+	filePath := filepath.Join(dirPath, "index.md")
+	return h.fs.WriteFile(filePath, output.String())
 }
 
-// MovableTypeArticleからHugoArticleへ変換
-func prepareHugoData(article MovableTypeArticle, t time.Time) HugoArticle {
+// HugoArticleデータを準備する
+func (h *HugoConverter) prepareHugoData(article MovableTypeArticle, t time.Time) HugoArticle {
 	title := article.Title
 	if title == "" {
 		title = "無題"
@@ -162,60 +218,60 @@ func prepareHugoData(article MovableTypeArticle, t time.Time) HugoArticle {
 	return hugoData
 }
 
-// 本文をHTMLからMarkdownに変換
-func convertBody(body string, converter *md.Converter) string {
-	markdown, err := converter.ConvertString(body)
-	if err != nil {
-		fmt.Println("警告: HTML→Markdown変換エラー:", err)
-		return body
-	}
-	return markdown
-}
-
-// ファイルに記事を書き込む
-func writeArticleToFile(filePath string, hugoData HugoArticle, tmpl *template.Template) error {
-	file, err := os.Create(filePath)
-	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	if err := tmpl.Execute(file, hugoData); err != nil {
-		return fmt.Errorf("テンプレート実行エラー: %v", err)
-	}
-
-	return nil
-}
-
-// タイトルからスラグを作成するヘルパー関数
-func createSlug(title string) string {
-	slug := strings.ReplaceAll(title, " ", "-")
-	slug = strings.ReplaceAll(slug, "/", "-")
-	slug = strings.ReplaceAll(slug, "\\", "-")
-	slug = strings.ReplaceAll(slug, ":", "-")
-	return slug
-}
-
-// 上記の関数を呼び出して変換を実行するメイン関数
+// エントリーポイント
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Println("使い方: go run main.go <Movable_Typeエクスポートファイルのパス>")
 		return
 	}
 
-	filePath := os.Args[1]
-	lines, err := ReadExportFile(filePath)
+	// 初期化
+	fs := &RealFileSystem{}
+	converter := NewHTMLToMarkdownConverter()
+
+	// テンプレートの読み込み
+	tmpl, err := template.ParseFiles("templates/hugo.tmpl")
 	if err != nil {
-		fmt.Println("エクスポートファイル読み込みエラー:", err)
-		return
+		// テンプレートファイルがない場合は組み込みテンプレートを使用
+		fmt.Println("警告: テンプレートファイルが見つかりません。組み込みテンプレートを使用します:", err)
+
+		// 組み込みのテンプレート定義
+		const builtinTemplate = `---
+title: "{{ .Title }}"
+date: {{ .Date }}
+slug: {{ .Slug }}
+{{ if .Category }}category:
+  - {{ .Category }}
+{{ end }}
+{{ if .Tags }}tags:
+{{ range .Tags }}  - {{ . }}
+{{ end }}{{ end }}
+{{ if .Image }}cover:
+    image: "{{ .Image }}"
+    alt: "{{ .Title }}"
+    hidden: true
+    caption: "{{ .Title }}"
+{{ end }}
+draft: false
+showtoc: false
+{{ if .Summary }}summary: "{{ .Summary }}"{{ end }}
+---
+
+{{ .Content }}
+`
+		tmpl, err = template.New("hugo").Parse(builtinTemplate)
+		if err != nil {
+			fmt.Printf("組み込みテンプレート解析エラー: %v\n", err)
+			return
+		}
 	}
 
-	// map[string]stringの記事データを構造体の配列に変換
-	articleMaps := ParseMovableTypeExportFile(lines)
-	articles := convertToArticleStructs(articleMaps)
+	// コンバーターの生成
+	hugoConverter := NewHugoConverter(fs, converter, tmpl)
 
-	fmt.Printf("処理対象記事数: %d\n", len(articles))
-	if err := createHugoFiles(articles); err != nil {
+	// 変換の実行
+	filePath := os.Args[1]
+	if err := hugoConverter.Convert(filePath, "output"); err != nil {
 		fmt.Println("Hugoファイル作成エラー:", err)
 	} else {
 		fmt.Println("変換が完了しました")
@@ -274,4 +330,12 @@ func parseArticleDate(dateStr string) (time.Time, error) {
 
 func formatDirName(t time.Time) string {
 	return fmt.Sprintf("%04d/%02d/%02d/%02d%02d", t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute())
+}
+
+func createSlug(title string) string {
+	slug := strings.ReplaceAll(title, " ", "-")
+	slug = strings.ReplaceAll(slug, "/", "-")
+	slug = strings.ReplaceAll(slug, "\\", "-")
+	slug = strings.ReplaceAll(slug, ":", "-")
+	return slug
 }
