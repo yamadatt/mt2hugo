@@ -1,17 +1,29 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"text/template"
 	"time"
 
 	md "github.com/JohannesKaufmann/html-to-markdown"
 	"github.com/JohannesKaufmann/html-to-markdown/plugin"
 	"github.com/PuerkitoBio/goquery"
 )
+
+// 記事データを保持する構造体
+type HugoArticle struct {
+	Title    string
+	Date     string
+	Slug     string
+	Category string
+	Tags     []string
+	Image    string
+	Summary  string
+	Content  string
+}
 
 // 各記事用のディレクトリを作成し、Hugoファイルを書き込む
 func createHugoFiles(articles []map[string]string) error {
@@ -33,11 +45,16 @@ func createHugoFiles(articles []map[string]string) error {
 	// プラグインを追加（テーブルなどの変換を改善）
 	converter.Use(plugin.GitHubFlavored())
 
+	// テンプレートを解析 - ファイルから読み込み
+	tmpl, err := template.ParseFiles("templates/hugo.tmpl")
+	if err != nil {
+		return fmt.Errorf("テンプレート解析エラー: %v", err)
+	}
+
 	for _, article := range articles {
 		// 日付情報の取得
 		dateStr, ok := article["DATE"]
 		if !ok {
-			// DATEフィールドがない記事はスキップ（エラーを出さずに続行）
 			fmt.Println("警告: DATEフィールドがない記事をスキップします")
 			continue
 		}
@@ -51,7 +68,6 @@ func createHugoFiles(articles []map[string]string) error {
 
 		// ディレクトリ名を年/月/日/時分 形式で作成
 		dirName := formatDirName(t)
-
 		dirPath := filepath.Join("output", dirName)
 
 		if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
@@ -65,78 +81,60 @@ func createHugoFiles(articles []map[string]string) error {
 		}
 		defer file.Close()
 
-		writer := bufio.NewWriter(file)
-
-		// YAML形式のフロントマターを作成
-		fmt.Fprintf(writer, "---\n")
-
-		// タイトルを出力
-		title := article["TITLE"]
-		if title == "" {
-			title = "無題"
-		}
-		fmt.Fprintf(writer, "title: \"%s\"\n", strings.ReplaceAll(title, "\"", "\\\""))
-
-		// 日付を適切な形式で出力
-		fmt.Fprintf(writer, "date: %s\n", t.Format("2006-01-02T15:04:05-07:00"))
-
-		// スラグ - タイトルから生成
-		slug := strings.ReplaceAll(title, " ", "-")
-		slug = strings.ReplaceAll(slug, "/", "-")
-		slug = strings.ReplaceAll(slug, "\\", "-")
-		slug = strings.ReplaceAll(slug, ":", "-")
-		fmt.Fprintf(writer, "slug: %s\n", slug)
-
-		// カテゴリ
-		if category, ok := article["CATEGORY"]; ok && category != "" {
-			fmt.Fprintf(writer, "category:\n  - %s\n", category)
+		// データの準備
+		hugoData := HugoArticle{
+			Title:    strings.ReplaceAll(getOrDefault(article, "TITLE", "無題"), "\"", "\\\""),
+			Date:     t.Format("2006-01-02T15:04:05-07:00"),
+			Slug:     createSlug(getOrDefault(article, "TITLE", "無題")),
+			Category: article["CATEGORY"],
+			Image:    article["IMAGE"],
+			Summary:  strings.ReplaceAll(article["EXCERPT"], "\"", "\\\""),
 		}
 
-		// タグ（MovableTypeのキーワードがあれば）
+		// タグの処理
 		if keywords, ok := article["KEYWORDS"]; ok && keywords != "" {
-			fmt.Fprintf(writer, "tags:\n")
 			for _, tag := range strings.Split(keywords, ",") {
-				fmt.Fprintf(writer, "  - %s\n", strings.TrimSpace(tag))
+				hugoData.Tags = append(hugoData.Tags, strings.TrimSpace(tag))
 			}
 		}
 
-		// 画像
-		if image, ok := article["IMAGE"]; ok && image != "" {
-			fmt.Fprintf(writer, "cover:\n")
-			fmt.Fprintf(writer, "    image: \"%s\"\n", image)
-			fmt.Fprintf(writer, "    alt: \"%s\"\n", title)
-			fmt.Fprintf(writer, "    hidden: true\n")
-			fmt.Fprintf(writer, "    caption: \"%s\"\n", title)
-		}
-
-		// その他の設定
-		fmt.Fprintf(writer, "draft: false\n")
-		fmt.Fprintf(writer, "showtoc: false\n")
-
-		// サマリーがあれば
-		if excerpt, ok := article["EXCERPT"]; ok && excerpt != "" {
-			fmt.Fprintf(writer, "summary: \"%s\"\n", strings.ReplaceAll(excerpt, "\"", "\\\""))
-		}
-
-		fmt.Fprintf(writer, "---\n\n")
-
-		// BODYがあればHTMLからMarkdownに変換して追加
+		// 本文の処理
 		if body, ok := article["BODY"]; ok {
 			markdown, err := converter.ConvertString(body)
 			if err != nil {
-				// 変換エラー時は元のHTMLをそのまま使用
 				fmt.Println("警告: HTML→Markdown変換エラー:", err)
-				fmt.Fprintf(writer, "%s\n", body)
+				hugoData.Content = body
 			} else {
-				fmt.Fprintf(writer, "%s\n", markdown)
+				hugoData.Content = markdown
 			}
 		}
 
-		writer.Flush()
+		// テンプレートを実行してファイルに書き込む
+		if err := tmpl.Execute(file, hugoData); err != nil {
+			return fmt.Errorf("テンプレート実行エラー: %v", err)
+		}
+
 		file.Close() // 各ファイル処理後にすぐ閉じる
 	}
 
 	return nil
+}
+
+// マップからキーの値を取得するヘルパー関数。存在しない場合はデフォルト値を返す
+func getOrDefault(m map[string]string, key, defaultValue string) string {
+	if value, ok := m[key]; ok && value != "" {
+		return value
+	}
+	return defaultValue
+}
+
+// タイトルからスラグを作成するヘルパー関数
+func createSlug(title string) string {
+	slug := strings.ReplaceAll(title, " ", "-")
+	slug = strings.ReplaceAll(slug, "/", "-")
+	slug = strings.ReplaceAll(slug, "\\", "-")
+	slug = strings.ReplaceAll(slug, ":", "-")
+	return slug
 }
 
 // 上記の関数を呼び出して変換を実行するメイン関数

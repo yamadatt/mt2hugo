@@ -1,3 +1,6 @@
+
+DeepL API Freeを使用し、SlugにはTITLEで書かれている日本語をインプットにして、端的でわかりやすい英語にしたい。
+
 # mt2hugo
 Movable TypeのエクスポートファイルからHugo用のファイルを作成するツールです。
 
