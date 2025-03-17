@@ -13,6 +13,21 @@ import (
 	"github.com/PuerkitoBio/goquery"
 )
 
+// MovableTypeArticle は、Movable Typeのエクスポートデータの記事を表す構造体
+type MovableTypeArticle struct {
+	Title         string
+	Date          string
+	Body          string
+	Category      string
+	Keywords      string
+	Excerpt       string
+	Image         string
+	Author        string
+	Status        string
+	AllowComments bool
+	// 他に必要なフィールドがあれば追加
+}
+
 // 記事データを保持する構造体
 type HugoArticle struct {
 	Title    string
@@ -26,8 +41,27 @@ type HugoArticle struct {
 }
 
 // 各記事用のディレクトリを作成し、Hugoファイルを書き込む
-func createHugoFiles(articles []map[string]string) error {
+func createHugoFiles(articles []MovableTypeArticle) error {
 	// HTMLをMarkdownに変換するコンバーターを初期化
+	converter := initializeConverter()
+
+	// テンプレートを解析
+	tmpl, err := loadTemplate("templates/hugo.tmpl")
+	if err != nil {
+		return err
+	}
+
+	for _, article := range articles {
+		if err := processArticle(article, converter, tmpl); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// HTMLをMarkdownに変換するコンバーターを初期化
+func initializeConverter() *md.Converter {
 	converter := md.NewConverter("", true, nil)
 
 	// 「class="keyword"」を持つリンクのカスタムルールを追加
@@ -45,87 +79,112 @@ func createHugoFiles(articles []map[string]string) error {
 	// プラグインを追加（テーブルなどの変換を改善）
 	converter.Use(plugin.GitHubFlavored())
 
-	// テンプレートを解析 - ファイルから読み込み
-	tmpl, err := template.ParseFiles("templates/hugo.tmpl")
+	return converter
+}
+
+// テンプレートを読み込む
+func loadTemplate(templatePath string) (*template.Template, error) {
+	tmpl, err := template.ParseFiles(templatePath)
 	if err != nil {
-		return fmt.Errorf("テンプレート解析エラー: %v", err)
+		return nil, fmt.Errorf("テンプレート解析エラー: %v", err)
+	}
+	return tmpl, nil
+}
+
+// 単一記事を処理する
+func processArticle(article MovableTypeArticle, converter *md.Converter, tmpl *template.Template) error {
+	// 日付情報の取得
+	if article.Date == "" {
+		fmt.Println("警告: DATEフィールドがない記事をスキップします")
+		return nil
 	}
 
-	for _, article := range articles {
-		// 日付情報の取得
-		dateStr, ok := article["DATE"]
-		if !ok {
-			fmt.Println("警告: DATEフィールドがない記事をスキップします")
-			continue
+	// 日付文字列をパース
+	t, err := parseArticleDate(article.Date)
+	if err != nil {
+		fmt.Printf("警告: 日付パースエラー '%s': %v - この記事をスキップします\n", article.Date, err)
+		return nil
+	}
+
+	// ファイルとディレクトリを準備
+	filePath, err := prepareOutputDirectory(t)
+	if err != nil {
+		return err
+	}
+
+	// Hugoデータを準備
+	hugoData := prepareHugoData(article, t)
+
+	// 本文の処理
+	if article.Body != "" {
+		hugoData.Content = convertBody(article.Body, converter)
+	}
+
+	// ファイルに書き込む
+	return writeArticleToFile(filePath, hugoData, tmpl)
+}
+
+// 出力ディレクトリを準備し、ファイルパスを返す
+func prepareOutputDirectory(t time.Time) (string, error) {
+	dirName := formatDirName(t)
+	dirPath := filepath.Join("output", dirName)
+
+	if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
+		return "", err
+	}
+
+	return filepath.Join(dirPath, "index.md"), nil
+}
+
+// MovableTypeArticleからHugoArticleへ変換
+func prepareHugoData(article MovableTypeArticle, t time.Time) HugoArticle {
+	title := article.Title
+	if title == "" {
+		title = "無題"
+	}
+
+	hugoData := HugoArticle{
+		Title:    strings.ReplaceAll(title, "\"", "\\\""),
+		Date:     t.Format("2006-01-02T15:04:05-07:00"),
+		Slug:     createSlug(title),
+		Category: article.Category,
+		Image:    article.Image,
+		Summary:  strings.ReplaceAll(article.Excerpt, "\"", "\\\""),
+	}
+
+	// タグの処理
+	if article.Keywords != "" {
+		for _, tag := range strings.Split(article.Keywords, ",") {
+			hugoData.Tags = append(hugoData.Tags, strings.TrimSpace(tag))
 		}
+	}
 
-		// 日付文字列をパース
-		t, err := parseArticleDate(dateStr)
-		if err != nil {
-			fmt.Printf("警告: 日付パースエラー '%s': %v - この記事をスキップします\n", dateStr, err)
-			continue
-		}
+	return hugoData
+}
 
-		// ディレクトリ名を年/月/日/時分 形式で作成
-		dirName := formatDirName(t)
-		dirPath := filepath.Join("output", dirName)
+// 本文をHTMLからMarkdownに変換
+func convertBody(body string, converter *md.Converter) string {
+	markdown, err := converter.ConvertString(body)
+	if err != nil {
+		fmt.Println("警告: HTML→Markdown変換エラー:", err)
+		return body
+	}
+	return markdown
+}
 
-		if err := os.MkdirAll(dirPath, os.ModePerm); err != nil {
-			return err
-		}
+// ファイルに記事を書き込む
+func writeArticleToFile(filePath string, hugoData HugoArticle, tmpl *template.Template) error {
+	file, err := os.Create(filePath)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
 
-		filePath := filepath.Join(dirPath, "index.md")
-		file, err := os.Create(filePath)
-		if err != nil {
-			return err
-		}
-		defer file.Close()
-
-		// データの準備
-		hugoData := HugoArticle{
-			Title:    strings.ReplaceAll(getOrDefault(article, "TITLE", "無題"), "\"", "\\\""),
-			Date:     t.Format("2006-01-02T15:04:05-07:00"),
-			Slug:     createSlug(getOrDefault(article, "TITLE", "無題")),
-			Category: article["CATEGORY"],
-			Image:    article["IMAGE"],
-			Summary:  strings.ReplaceAll(article["EXCERPT"], "\"", "\\\""),
-		}
-
-		// タグの処理
-		if keywords, ok := article["KEYWORDS"]; ok && keywords != "" {
-			for _, tag := range strings.Split(keywords, ",") {
-				hugoData.Tags = append(hugoData.Tags, strings.TrimSpace(tag))
-			}
-		}
-
-		// 本文の処理
-		if body, ok := article["BODY"]; ok {
-			markdown, err := converter.ConvertString(body)
-			if err != nil {
-				fmt.Println("警告: HTML→Markdown変換エラー:", err)
-				hugoData.Content = body
-			} else {
-				hugoData.Content = markdown
-			}
-		}
-
-		// テンプレートを実行してファイルに書き込む
-		if err := tmpl.Execute(file, hugoData); err != nil {
-			return fmt.Errorf("テンプレート実行エラー: %v", err)
-		}
-
-		file.Close() // 各ファイル処理後にすぐ閉じる
+	if err := tmpl.Execute(file, hugoData); err != nil {
+		return fmt.Errorf("テンプレート実行エラー: %v", err)
 	}
 
 	return nil
-}
-
-// マップからキーの値を取得するヘルパー関数。存在しない場合はデフォルト値を返す
-func getOrDefault(m map[string]string, key, defaultValue string) string {
-	if value, ok := m[key]; ok && value != "" {
-		return value
-	}
-	return defaultValue
 }
 
 // タイトルからスラグを作成するヘルパー関数
@@ -151,13 +210,44 @@ func main() {
 		return
 	}
 
-	articles := ParseMovableTypeExportFile(lines)
+	// map[string]stringの記事データを構造体の配列に変換
+	articleMaps := ParseMovableTypeExportFile(lines)
+	articles := convertToArticleStructs(articleMaps)
+
 	fmt.Printf("処理対象記事数: %d\n", len(articles))
 	if err := createHugoFiles(articles); err != nil {
 		fmt.Println("Hugoファイル作成エラー:", err)
 	} else {
 		fmt.Println("変換が完了しました")
 	}
+}
+
+// マップ形式の記事データを構造体に変換
+func convertToArticleStructs(articleMaps []map[string]string) []MovableTypeArticle {
+	articles := make([]MovableTypeArticle, 0, len(articleMaps))
+
+	for _, articleMap := range articleMaps {
+		article := MovableTypeArticle{
+			Title:    articleMap["TITLE"],
+			Date:     articleMap["DATE"],
+			Body:     articleMap["BODY"],
+			Category: articleMap["CATEGORY"],
+			Keywords: articleMap["KEYWORDS"],
+			Excerpt:  articleMap["EXCERPT"],
+			Image:    articleMap["IMAGE"],
+			Author:   articleMap["AUTHOR"],
+			Status:   articleMap["STATUS"],
+		}
+
+		// ALLOW_COMMENTSがある場合はbool値に変換
+		if allowComments, ok := articleMap["ALLOW_COMMENTS"]; ok {
+			article.AllowComments = (allowComments == "1" || strings.ToLower(allowComments) == "true")
+		}
+
+		articles = append(articles, article)
+	}
+
+	return articles
 }
 
 func parseArticleDate(dateStr string) (time.Time, error) {
