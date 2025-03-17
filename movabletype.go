@@ -101,7 +101,11 @@ func ParseMovableTypeExportFile(lines []string) []map[string]string {
 		if bodyContent != "" {
 			currentArticle["BODY"] = bodyContent
 		}
-		articles = append(articles, currentArticle)
+
+		// 必須フィールドを持つ記事だけを追加
+		if _, hasDate := currentArticle["DATE"]; hasDate {
+			articles = append(articles, currentArticle)
+		}
 	}
 
 	return articles

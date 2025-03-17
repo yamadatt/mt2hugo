@@ -9,6 +9,8 @@ import (
 	"time"
 
 	md "github.com/JohannesKaufmann/html-to-markdown"
+	"github.com/JohannesKaufmann/html-to-markdown/plugin"
+	"github.com/PuerkitoBio/goquery"
 )
 
 // 各記事用のディレクトリを作成し、Hugoファイルを書き込む
@@ -16,46 +18,39 @@ func createHugoFiles(articles []map[string]string) error {
 	// HTMLをMarkdownに変換するコンバーターを初期化
 	converter := md.NewConverter("", true, nil)
 
+	// 「class="keyword"」を持つリンクのカスタムルールを追加
+	converter.AddRules(md.Rule{
+		Filter: []string{"a"},
+		Replacement: func(content string, selec *goquery.Selection, options *md.Options) *string {
+			// クラス属性がkeywordのリンクをチェック
+			if selec.HasClass("keyword") {
+				return &content
+			}
+			return nil
+		},
+	})
+
+	// プラグインを追加（テーブルなどの変換を改善）
+	converter.Use(plugin.GitHubFlavored())
+
 	for _, article := range articles {
 		// 日付情報の取得
 		dateStr, ok := article["DATE"]
 		if !ok {
-			return fmt.Errorf("missing DATE field in article")
+			// DATEフィールドがない記事はスキップ（エラーを出さずに続行）
+			fmt.Println("警告: DATEフィールドがない記事をスキップします")
+			continue
 		}
 
-		// 日付文字列のクリーニング（余分な文字を削除）
-		dateStr = strings.TrimSpace(dateStr)
-		dateStr = strings.TrimRight(dateStr, "\\")
-
-		fmt.Printf("処理中の日付文字列: %s\n", dateStr) // デバッグ用
-
-		// 様々な日付形式を試みる
-		var t time.Time
-		var err error
-
-		formats := []string{
-			"01/02/2006 15:04:05", // MM/DD/YYYY HH:MM:SS
-			"2006-01-02 15:04:05", // YYYY-MM-DD HH:MM:SS
-			"01/02/06 15:04:05",   // MM/DD/YY HH:MM:SS
-			"02/01/2006 15:04:05", // DD/MM/YYYY HH:MM:SS
-			"2006/01/02 15:04:05", // YYYY/MM/DD HH:MM:SS
-			"01/02/2006 15:04",    // MM/DD/YYYY HH:MM
-		}
-
-		for _, format := range formats {
-			t, err = time.Parse(format, dateStr)
-			if err == nil {
-				break // 正常に解析できたらループを抜ける
-			}
-		}
-
+		// 日付文字列をパース
+		t, err := parseArticleDate(dateStr)
 		if err != nil {
-			return fmt.Errorf("could not parse date '%s': %v", dateStr, err)
+			fmt.Printf("警告: 日付パースエラー '%s': %v - この記事をスキップします\n", dateStr, err)
+			continue
 		}
 
 		// ディレクトリ名を年/月/日/時分 形式で作成
-		dirName := fmt.Sprintf("%04d/%02d/%02d/%02d%02d",
-			t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute())
+		dirName := formatDirName(t)
 
 		dirPath := filepath.Join("output", dirName)
 
@@ -71,17 +66,59 @@ func createHugoFiles(articles []map[string]string) error {
 		defer file.Close()
 
 		writer := bufio.NewWriter(file)
-		fmt.Fprintf(writer, "+++\n")
-		for key, value := range article {
-			// BODYはフロントマターには含めない
-			if key == "BODY" {
-				continue
-			}
-			// エスケープが必要な文字を処理
-			value = strings.ReplaceAll(value, "\"", "\\\"")
-			fmt.Fprintf(writer, "%s = \"%s\"\n", key, value)
+
+		// YAML形式のフロントマターを作成
+		fmt.Fprintf(writer, "---\n")
+
+		// タイトルを出力
+		title := article["TITLE"]
+		if title == "" {
+			title = "無題"
 		}
-		fmt.Fprintf(writer, "+++\n\n")
+		fmt.Fprintf(writer, "title: \"%s\"\n", strings.ReplaceAll(title, "\"", "\\\""))
+
+		// 日付を適切な形式で出力
+		fmt.Fprintf(writer, "date: %s\n", t.Format("2006-01-02T15:04:05-07:00"))
+
+		// スラグ - タイトルから生成
+		slug := strings.ReplaceAll(title, " ", "-")
+		slug = strings.ReplaceAll(slug, "/", "-")
+		slug = strings.ReplaceAll(slug, "\\", "-")
+		slug = strings.ReplaceAll(slug, ":", "-")
+		fmt.Fprintf(writer, "slug: %s\n", slug)
+
+		// カテゴリ
+		if category, ok := article["CATEGORY"]; ok && category != "" {
+			fmt.Fprintf(writer, "category:\n  - %s\n", category)
+		}
+
+		// タグ（MovableTypeのキーワードがあれば）
+		if keywords, ok := article["KEYWORDS"]; ok && keywords != "" {
+			fmt.Fprintf(writer, "tags:\n")
+			for _, tag := range strings.Split(keywords, ",") {
+				fmt.Fprintf(writer, "  - %s\n", strings.TrimSpace(tag))
+			}
+		}
+
+		// 画像
+		if image, ok := article["IMAGE"]; ok && image != "" {
+			fmt.Fprintf(writer, "cover:\n")
+			fmt.Fprintf(writer, "    image: \"%s\"\n", image)
+			fmt.Fprintf(writer, "    alt: \"%s\"\n", title)
+			fmt.Fprintf(writer, "    hidden: true\n")
+			fmt.Fprintf(writer, "    caption: \"%s\"\n", title)
+		}
+
+		// その他の設定
+		fmt.Fprintf(writer, "draft: false\n")
+		fmt.Fprintf(writer, "showtoc: false\n")
+
+		// サマリーがあれば
+		if excerpt, ok := article["EXCERPT"]; ok && excerpt != "" {
+			fmt.Fprintf(writer, "summary: \"%s\"\n", strings.ReplaceAll(excerpt, "\"", "\\\""))
+		}
+
+		fmt.Fprintf(writer, "---\n\n")
 
 		// BODYがあればHTMLからMarkdownに変換して追加
 		if body, ok := article["BODY"]; ok {
@@ -96,6 +133,7 @@ func createHugoFiles(articles []map[string]string) error {
 		}
 
 		writer.Flush()
+		file.Close() // 各ファイル処理後にすぐ閉じる
 	}
 
 	return nil
