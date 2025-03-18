@@ -8,20 +8,16 @@ import (
 	"text/template"
 	"time"
 
+	"mt2hugo/converter" // converterパッケージをインポート
 	"mt2hugo/fs"
 	"mt2hugo/movabletype"
 	"mt2hugo/util"
 )
 
-// Converter はHTMLをMarkdownに変換するインターフェース
-type Converter interface {
-	ConvertHTMLToMarkdown(html string) (string, error)
-}
-
 // HugoConverter は記事変換を行う構造体
 type HugoConverter struct {
 	fs        fs.FileSystem
-	converter Converter
+	converter converter.HTMLConverter // インターフェース型を使用
 	tmpl      *template.Template
 }
 
@@ -63,10 +59,10 @@ func LoadTemplate(templatePath string) (*template.Template, error) {
 }
 
 // NewConverter はHugoConverterの新しいインスタンスを作成する
-func NewConverter(fileSystem fs.FileSystem, converter Converter, tmpl *template.Template) *HugoConverter {
+func NewConverter(fileSystem fs.FileSystem, htmlConverter converter.HTMLConverter, tmpl *template.Template) *HugoConverter {
 	return &HugoConverter{
 		fs:        fileSystem,
-		converter: converter,
+		converter: htmlConverter,
 		tmpl:      tmpl,
 	}
 }

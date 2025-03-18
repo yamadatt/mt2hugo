@@ -1,6 +1,33 @@
 
 DeepL API Freeを使用し、SlugにはTITLEで書かれている日本語をインプットにして、端的でわかりやすい英語にしたい。
 
+
+main --> fs
+main --> hugo
+main --> converter
+hugo --> fs
+hugo --> converter
+hugo --> movabletype
+hugo --> util
+fs --> movabletype
+
+
+mt2hugo/
+  ├── main.go                # エントリーポイントのみ
+  ├── fs/                    # ファイルシステム操作
+  │   └── filesystem.go
+  ├── converter/             # HTML→Markdown変換
+  │   └── converter.go
+  ├── movabletype/           # Movable Type関連
+  │   ├── models.go          # Articleなどの構造体定義
+  │   └── parser.go          # パース処理
+  ├── hugo/                  # Hugo関連
+  │   ├── models.go          # Article構造体の定義
+  │   ├── converter.go       # Converter構造体と関連メソッド
+  │   └── template.go        # テンプレート処理
+  └── util/                  # ユーティリティ
+      └── date.go            # 日付処理など
+
 # mt2hugo
 Movable TypeのエクスポートファイルからHugo用のファイルを作成するツールです。
 

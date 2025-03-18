@@ -1,9 +1,8 @@
 package fs
 
 import (
+	"bufio"
 	"os"
-
-	"mt2hugo/movabletype"
 )
 
 // FileSystem はファイルシステム操作のインターフェース
@@ -18,7 +17,23 @@ type RealFileSystem struct{}
 
 // ReadFile はファイルを読み込み、行のスライスを返す
 func (fs *RealFileSystem) ReadFile(path string) ([]string, error) {
-	return movabletype.ReadExportFile(path)
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+
+	var lines []string
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		lines = append(lines, scanner.Text())
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+
+	return lines, nil
 }
 
 // WriteFile はファイルに内容を書き込む
