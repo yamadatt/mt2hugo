@@ -11,22 +11,10 @@ import (
 	md "github.com/JohannesKaufmann/html-to-markdown"
 	"github.com/JohannesKaufmann/html-to-markdown/plugin"
 	"github.com/PuerkitoBio/goquery"
-)
 
-// MovableTypeArticle は、Movable Typeのエクスポートデータの記事を表す構造体
-type MovableTypeArticle struct {
-	Title         string
-	Date          string
-	Body          string
-	Category      string
-	Keywords      string
-	Excerpt       string
-	Image         string
-	Author        string
-	Status        string
-	AllowComments bool
-	// 他に必要なフィールドがあれば追加
-}
+	"mt2hugo/movabletype" // パッケージのインポート
+	"mt2hugo/util"        // utilパッケージを追加
+)
 
 // 記事データを保持する構造体
 type HugoArticle struct {
@@ -51,7 +39,7 @@ type FileSystem interface {
 type RealFileSystem struct{}
 
 func (fs *RealFileSystem) ReadFile(path string) ([]string, error) {
-	return ReadExportFile(path)
+	return movabletype.ReadExportFile(path)
 }
 
 func (fs *RealFileSystem) WriteFile(path string, content string) error {
@@ -128,8 +116,8 @@ func (h *HugoConverter) Convert(inputPath string, outputBaseDir string) error {
 	}
 
 	// パース処理
-	articleMaps := ParseMovableTypeExportFile(lines)
-	articles := convertToArticleStructs(articleMaps)
+	articleMaps := movabletype.ParseExportFile(lines)
+	articles := movabletype.ConvertToArticleStructs(articleMaps)
 
 	fmt.Printf("処理対象記事数: %d\n", len(articles))
 
@@ -144,22 +132,22 @@ func (h *HugoConverter) Convert(inputPath string, outputBaseDir string) error {
 }
 
 // 単一記事の処理
-func (h *HugoConverter) processArticle(article MovableTypeArticle, outputBaseDir string) error {
+func (h *HugoConverter) processArticle(article movabletype.Article, outputBaseDir string) error {
 	// 日付情報の取得
 	if article.Date == "" {
 		fmt.Println("警告: DATEフィールドがない記事をスキップします")
 		return nil
 	}
 
-	// 日付文字列をパース
-	t, err := parseArticleDate(article.Date)
+	// 日付文字列をパース - utilパッケージを使用
+	t, err := util.ParseArticleDate(article.Date)
 	if err != nil {
 		fmt.Printf("警告: 日付パースエラー '%s': %v - この記事をスキップします\n", article.Date, err)
 		return nil
 	}
 
-	// 出力ディレクトリパスを生成
-	dirName := formatDirName(t)
+	// 出力ディレクトリパスを生成 - utilパッケージを使用
+	dirName := util.FormatDirName(t)
 	dirPath := filepath.Join(outputBaseDir, dirName)
 
 	// ディレクトリを作成
@@ -193,7 +181,7 @@ func (h *HugoConverter) processArticle(article MovableTypeArticle, outputBaseDir
 }
 
 // HugoArticleデータを準備する
-func (h *HugoConverter) prepareHugoData(article MovableTypeArticle, t time.Time) HugoArticle {
+func (h *HugoConverter) prepareHugoData(article movabletype.Article, t time.Time) HugoArticle {
 	title := article.Title
 	if title == "" {
 		title = "無題"
@@ -202,7 +190,7 @@ func (h *HugoConverter) prepareHugoData(article MovableTypeArticle, t time.Time)
 	hugoData := HugoArticle{
 		Title:    strings.ReplaceAll(title, "\"", "\\\""),
 		Date:     t.Format("2006-01-02T15:04:05-07:00"),
-		Slug:     createSlug(title),
+		Slug:     util.CreateSlug(title), // utilパッケージを使用
 		Category: article.Category,
 		Image:    article.Image,
 		Summary:  strings.ReplaceAll(article.Excerpt, "\"", "\\\""),
@@ -276,66 +264,4 @@ showtoc: false
 	} else {
 		fmt.Println("変換が完了しました")
 	}
-}
-
-// マップ形式の記事データを構造体に変換
-func convertToArticleStructs(articleMaps []map[string]string) []MovableTypeArticle {
-	articles := make([]MovableTypeArticle, 0, len(articleMaps))
-
-	for _, articleMap := range articleMaps {
-		article := MovableTypeArticle{
-			Title:    articleMap["TITLE"],
-			Date:     articleMap["DATE"],
-			Body:     articleMap["BODY"],
-			Category: articleMap["CATEGORY"],
-			Keywords: articleMap["KEYWORDS"],
-			Excerpt:  articleMap["EXCERPT"],
-			Image:    articleMap["IMAGE"],
-			Author:   articleMap["AUTHOR"],
-			Status:   articleMap["STATUS"],
-		}
-
-		// ALLOW_COMMENTSがある場合はbool値に変換
-		if allowComments, ok := articleMap["ALLOW_COMMENTS"]; ok {
-			article.AllowComments = (allowComments == "1" || strings.ToLower(allowComments) == "true")
-		}
-
-		articles = append(articles, article)
-	}
-
-	return articles
-}
-
-func parseArticleDate(dateStr string) (time.Time, error) {
-	dateStr = strings.TrimSpace(dateStr)
-	dateStr = strings.TrimRight(dateStr, "\\")
-	formats := []string{
-		"01/02/2006 15:04:05",
-		"2006-01-02 15:04:05",
-		"01/02/06 15:04:05",
-		"02/01/2006 15:04:05",
-		"2006/01/02 15:04:05",
-		"01/02/2006 15:04",
-	}
-	var t time.Time
-	var err error
-	for _, format := range formats {
-		t, err = time.Parse(format, dateStr)
-		if err == nil {
-			return t, nil
-		}
-	}
-	return t, fmt.Errorf("could not parse date '%s': %v", dateStr, err)
-}
-
-func formatDirName(t time.Time) string {
-	return fmt.Sprintf("%04d/%02d/%02d/%02d%02d", t.Year(), t.Month(), t.Day(), t.Hour(), t.Minute())
-}
-
-func createSlug(title string) string {
-	slug := strings.ReplaceAll(title, " ", "-")
-	slug = strings.ReplaceAll(slug, "/", "-")
-	slug = strings.ReplaceAll(slug, "\\", "-")
-	slug = strings.ReplaceAll(slug, ":", "-")
-	return slug
 }

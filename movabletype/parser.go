@@ -1,4 +1,4 @@
-package main
+package movabletype
 
 import (
 	"bufio"
@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// Movable Typeのエクスポートファイルを読み込み、行ごとの配列を返す
+// ReadExportFile はMovable Typeのエクスポートファイルを読み込み、行ごとの配列を返す
 func ReadExportFile(filePath string) ([]string, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -27,9 +27,9 @@ func ReadExportFile(filePath string) ([]string, error) {
 	return lines, nil
 }
 
-// Movable Typeのエクスポートファイルの行を解析し、
+// ParseExportFile はMovable Typeのエクスポートファイルの行を解析し、
 // 各記事のキーと値のマップを含む配列を返す
-func ParseMovableTypeExportFile(lines []string) []map[string]string {
+func ParseExportFile(lines []string) []map[string]string {
 	var articles []map[string]string
 	var currentArticle map[string]string
 	var currentKey string
