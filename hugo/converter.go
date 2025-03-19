@@ -108,7 +108,14 @@ func (h *HugoConverter) Convert(inputPath string, outputBaseDir string) error {
 func (h *HugoConverter) processArticle(article movabletype.Article, outputBaseDir string) error {
 	// 日付情報の取得
 	if article.Date == "" {
-		return fmt.Errorf("DATEフィールドがありません")
+		// エラーメッセージに記事のタイトルと識別情報を追加
+		title := "無題"
+		if article.Title != "" {
+			title = article.Title
+		}
+
+		return fmt.Errorf("DATEフィールドがありません (記事: %s)", title)
+
 	}
 
 	// 日付文字列をパース

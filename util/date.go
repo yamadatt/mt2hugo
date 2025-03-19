@@ -11,12 +11,8 @@ func ParseArticleDate(dateStr string) (time.Time, error) {
 	dateStr = strings.TrimSpace(dateStr)
 	dateStr = strings.TrimRight(dateStr, "\\")
 	formats := []string{
-		"01/02/2006 15:04:05",
-		"2006-01-02 15:04:05",
-		"01/02/06 15:04:05",
-		"02/01/2006 15:04:05",
-		"2006/01/02 15:04:05",
-		"01/02/2006 15:04",
+		"01/02/2006 15:04:05", // 標準的なMT形式 (MM/DD/YYYY)
+		"01/02/2006 00:00:00", // 時間が00:00:00の形式
 	}
 	var t time.Time
 	var err error
