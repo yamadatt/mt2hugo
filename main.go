@@ -14,6 +14,7 @@ import (
 func main() {
 	// コマンドラインオプションの定義
 	noMarkdown := flag.Bool("no-markdown", false, "HTMLをMarkdownに変換せず、そのまま出力します")
+	formatHTML := flag.Bool("format-html", false, "HTMLを階層構造でフォーマットして出力します(--no-markdownと共に使用)")
 	outputDir := flag.String("output", "output", "出力先ディレクトリを指定します")
 	flag.Parse()
 
@@ -36,14 +37,22 @@ func main() {
 		return
 	}
 
+	// formatHTMLは--no-markdownと一緒に使う場合のみ効果がある
+	if *formatHTML && !*noMarkdown {
+		fmt.Println("注意: --format-htmlオプションは--no-markdownと一緒に使用した場合のみ効果があります")
+	}
+
 	// コンバーターの生成
-	hugoConverter := hugo.NewConverter(fileSystem, htmlConverter, tmpl, *noMarkdown)
+	hugoConverter := hugo.NewConverter(fileSystem, htmlConverter, tmpl, *noMarkdown, *formatHTML)
 
 	// 変換の実行
 	filePath := args[0]
 	fmt.Printf("処理を開始します: %s\n", filePath)
 	if *noMarkdown {
 		fmt.Println("Markdown変換を無効にしました。HTMLをそのまま出力します。")
+		if *formatHTML {
+			fmt.Println("HTMLを階層構造でフォーマットします。")
+		}
 	}
 
 	start := time.Now()

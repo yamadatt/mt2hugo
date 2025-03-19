@@ -20,6 +20,7 @@ type HugoConverter struct {
 	converter  converter.HTMLConverter // インターフェース型を使用
 	tmpl       *template.Template
 	noMarkdown bool // Markdownへの変換をスキップするフラグ
+	formatHTML bool // HTMLを階層構造でフォーマットするフラグ
 }
 
 // デフォルトのテンプレート文字列
@@ -60,12 +61,13 @@ func LoadTemplate(templatePath string) (*template.Template, error) {
 }
 
 // NewConverter はHugoConverterの新しいインスタンスを作成する
-func NewConverter(fileSystem fs.FileSystem, htmlConverter converter.HTMLConverter, tmpl *template.Template, noMarkdown bool) *HugoConverter {
+func NewConverter(fileSystem fs.FileSystem, htmlConverter converter.HTMLConverter, tmpl *template.Template, noMarkdown bool, formatHTML bool) *HugoConverter {
 	return &HugoConverter{
 		fs:         fileSystem,
 		converter:  htmlConverter,
 		tmpl:       tmpl,
 		noMarkdown: noMarkdown,
+		formatHTML: formatHTML,
 	}
 }
 
@@ -153,8 +155,20 @@ func (h *HugoConverter) processArticle(article movabletype.Article, outputBaseDi
 	// 本文の処理
 	if article.Body != "" {
 		if h.noMarkdown {
-			// Markdown変換をスキップし、元のHTMLをそのまま使用
-			hugoData.Content = article.Body
+			// Markdown変換をスキップ
+			if h.formatHTML {
+				// HTMLを階層構造でフォーマット
+				formattedHTML, err := h.converter.FormatHTMLWithIndentation(article.Body)
+				if err != nil {
+					fmt.Println("警告: HTML整形エラー:", err)
+					hugoData.Content = article.Body
+				} else {
+					hugoData.Content = formattedHTML
+				}
+			} else {
+				// そのままのHTMLを使用
+				hugoData.Content = article.Body
+			}
 		} else {
 			// HTMLをMarkdownに変換
 			markdown, err := h.converter.ConvertHTMLToMarkdown(article.Body)
