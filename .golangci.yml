@@ -1,0 +1,46 @@
+linters:
+  enable:
+    - errcheck      # エラーチェックの欠落を検出
+    - gosimple      # コードを簡素化できる部分を検出
+    - govet         # Go標準の静的解析ツール
+    - ineffassign   # 未使用の代入を検出
+    - staticcheck   # より高度な静的解析
+    - typecheck     # 型チェック
+    - unused        # 未使用のコードを検出（deadcodeの代替）
+    - revive        # golint の強化版
+    - gocyclo       # 循環的複雑度を計測
+    - misspell      # スペルミスを検出
+    - lll           # 長すぎる行を検出
+
+linters-settings:
+  gocyclo:
+    # 循環的複雑度の最大値
+    min-complexity: 15
+  lll:
+    # 1行の最大文字数
+    line-length: 120
+  revive:
+    # 厳格度の高いルールを有効化
+    rules:
+      - name: exported
+        arguments:
+          - "disableStutteringCheck"
+      - name: var-naming
+        severity: warning
+
+issues:
+  exclude-use-default: false
+  exclude:
+    # errcheck: 一部のエラーチェックを無視
+    - Error return value of .((os\.)?std(out|err)\..*|.*Close|.*Flush|os\.Remove(All)?|.*print(f|ln)?|os\.(Un)?Setenv). is not checked
+
+  exclude-rules:
+    # テストファイルでは一部のルールを緩和
+    - path: _test\.go
+      linters:
+        - lll
+        - gocyclo
+    # 特定のパターンを除外
+    - linters:
+        - lll
+      source: "^//go:generate "
