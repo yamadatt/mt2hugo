@@ -1,19 +1,27 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"os"
 	"time"
 
-	"mt2hugo/converter" // converterパッケージをインポート
+	"mt2hugo/converter"
 	"mt2hugo/fs"
 	"mt2hugo/hugo"
 )
 
 // エントリーポイント
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("使い方: go run main.go <Movable_Typeエクスポートファイルのパス>")
+	// コマンドラインオプションの定義
+	noMarkdown := flag.Bool("no-markdown", false, "HTMLをMarkdownに変換せず、そのまま出力します")
+	outputDir := flag.String("output", "output", "出力先ディレクトリを指定します")
+	flag.Parse()
+
+	args := flag.Args()
+	if len(args) < 1 {
+		fmt.Println("使い方: go run main.go [オプション] <Movable_Typeエクスポートファイルのパス>")
+		fmt.Println("オプション:")
+		flag.PrintDefaults()
 		return
 	}
 
@@ -29,14 +37,17 @@ func main() {
 	}
 
 	// コンバーターの生成
-	hugoConverter := hugo.NewConverter(fileSystem, htmlConverter, tmpl)
+	hugoConverter := hugo.NewConverter(fileSystem, htmlConverter, tmpl, *noMarkdown)
 
 	// 変換の実行
-	filePath := os.Args[1]
+	filePath := args[0]
 	fmt.Printf("処理を開始します: %s\n", filePath)
+	if *noMarkdown {
+		fmt.Println("Markdown変換を無効にしました。HTMLをそのまま出力します。")
+	}
 
 	start := time.Now()
-	if err := hugoConverter.Convert(filePath, "output"); err != nil {
+	if err := hugoConverter.Convert(filePath, *outputDir); err != nil {
 		fmt.Println("Hugoファイル作成エラー:", err)
 	} else {
 		elapsed := time.Since(start)

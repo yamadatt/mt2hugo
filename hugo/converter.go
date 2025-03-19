@@ -16,9 +16,10 @@ import (
 
 // HugoConverter は記事変換を行う構造体
 type HugoConverter struct {
-	fs        fs.FileSystem
-	converter converter.HTMLConverter // インターフェース型を使用
-	tmpl      *template.Template
+	fs         fs.FileSystem
+	converter  converter.HTMLConverter // インターフェース型を使用
+	tmpl       *template.Template
+	noMarkdown bool // Markdownへの変換をスキップするフラグ
 }
 
 // デフォルトのテンプレート文字列
@@ -59,11 +60,12 @@ func LoadTemplate(templatePath string) (*template.Template, error) {
 }
 
 // NewConverter はHugoConverterの新しいインスタンスを作成する
-func NewConverter(fileSystem fs.FileSystem, htmlConverter converter.HTMLConverter, tmpl *template.Template) *HugoConverter {
+func NewConverter(fileSystem fs.FileSystem, htmlConverter converter.HTMLConverter, tmpl *template.Template, noMarkdown bool) *HugoConverter {
 	return &HugoConverter{
-		fs:        fileSystem,
-		converter: htmlConverter,
-		tmpl:      tmpl,
+		fs:         fileSystem,
+		converter:  htmlConverter,
+		tmpl:       tmpl,
+		noMarkdown: noMarkdown,
 	}
 }
 
@@ -150,12 +152,18 @@ func (h *HugoConverter) processArticle(article movabletype.Article, outputBaseDi
 
 	// 本文の処理
 	if article.Body != "" {
-		markdown, err := h.converter.ConvertHTMLToMarkdown(article.Body)
-		if err != nil {
-			fmt.Println("警告: HTML→Markdown変換エラー:", err)
+		if h.noMarkdown {
+			// Markdown変換をスキップし、元のHTMLをそのまま使用
 			hugoData.Content = article.Body
 		} else {
-			hugoData.Content = markdown
+			// HTMLをMarkdownに変換
+			markdown, err := h.converter.ConvertHTMLToMarkdown(article.Body)
+			if err != nil {
+				fmt.Println("警告: HTML→Markdown変換エラー:", err)
+				hugoData.Content = article.Body
+			} else {
+				hugoData.Content = markdown
+			}
 		}
 	}
 
