@@ -165,10 +165,16 @@ func prepareHugoData(article movabletype.Article, t time.Time) HugoArticle {
 		title = "無題"
 	}
 
+	// slugの決定: BASENAMEがあれば使用し、なければタイトルからスラグを生成
+	slug := article.Basename
+	if slug == "" {
+		slug = util.CreateSlug(title)
+	}
+
 	hugoData := HugoArticle{
 		Title:    strings.ReplaceAll(title, "\"", "\\\""),
 		Date:     t.Format("2006-01-02T15:04:05-07:00"),
-		Slug:     util.CreateSlug(title),
+		Slug:     slug,
 		Category: article.Category,
 		Image:    article.Image,
 		Summary:  strings.ReplaceAll(article.Excerpt, "\"", "\\\""),

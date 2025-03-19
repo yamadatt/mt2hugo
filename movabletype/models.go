@@ -14,6 +14,7 @@ type Article struct {
 	Author        string
 	Status        string
 	AllowComments bool
+	Basename      string // BASENAMEフィールドを追加
 }
 
 // マップ形式の記事データを構造体に変換
@@ -31,6 +32,7 @@ func ConvertToArticleStructs(articleMaps []map[string]string) []Article {
 			Image:    articleMap["IMAGE"],
 			Author:   articleMap["AUTHOR"],
 			Status:   articleMap["STATUS"],
+			Basename: articleMap["BASENAME"], // BASENAMEを追加
 		}
 
 		// ALLOW_COMMENTSがある場合はbool値に変換
