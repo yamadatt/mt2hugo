@@ -5,17 +5,20 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // テスト用の一時ディレクトリ作成
 func setupTestDir(t *testing.T) string {
 	tempDir := filepath.Join(os.TempDir(), "mt2hugo_test")
-	if err := os.RemoveAll(tempDir); err != nil && !os.IsNotExist(err) {
-		t.Fatalf("テスト用ディレクトリのクリーンアップに失敗: %v", err)
-	}
-	if err := os.MkdirAll(tempDir, 0755); err != nil {
-		t.Fatalf("テスト用ディレクトリの作成に失敗: %v", err)
-	}
+	err := os.RemoveAll(tempDir)
+	require.True(t, err == nil || os.IsNotExist(err), "テスト用ディレクトリのクリーンアップに失敗: %v", err)
+
+	err = os.MkdirAll(tempDir, 0755)
+	require.NoError(t, err, "テスト用ディレクトリの作成に失敗")
+
 	return tempDir
 }
 
@@ -29,38 +32,56 @@ func cleanupTestDir(t *testing.T, dir string) {
 // テスト用のファイル作成
 func createTestFile(t *testing.T, dir, filename, content string) string {
 	fullPath := filepath.Join(dir, filename)
-	if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
-		t.Fatalf("テスト用ファイルの作成に失敗: %v", err)
-	}
+	err := os.WriteFile(fullPath, []byte(content), 0644)
+	require.NoError(t, err, "テスト用ファイルの作成に失敗")
 	return fullPath
 }
 
 // FileSystemErrorのテスト
 func TestFileSystemError(t *testing.T) {
-	origErr := errors.New("元のエラー")
-	fsErr := &FileSystemError{
-		Op:      "TestOp",
-		Path:    "/test/path",
-		Message: "テストエラーメッセージ",
-		Err:     origErr,
+	testCases := []struct {
+		name           string
+		fsErr          *FileSystemError
+		expectedMsg    string
+		checkUnwrap    bool
+		expectedUnwrap error
+	}{
+		{
+			name: "元のエラーあり",
+			fsErr: &FileSystemError{
+				Op:      "TestOp",
+				Path:    "/test/path",
+				Message: "テストエラーメッセージ",
+				Err:     errors.New("元のエラー"),
+			},
+			expectedMsg:    "ファイルシステムエラー: TestOp /test/path: テストエラーメッセージ - 元のエラー",
+			checkUnwrap:    true,
+			expectedUnwrap: errors.New("元のエラー"),
+		},
+		{
+			name: "元のエラーなし",
+			fsErr: &FileSystemError{
+				Op:      "TestOp",
+				Path:    "/test/path",
+				Message: "テストエラーメッセージ",
+				Err:     nil,
+			},
+			expectedMsg:    "ファイルシステムエラー: TestOp /test/path: テストエラーメッセージ",
+			checkUnwrap:    false,
+			expectedUnwrap: nil,
+		},
 	}
 
-	// Errorメソッドのテスト
-	expected := "ファイルシステムエラー: TestOp /test/path: テストエラーメッセージ - 元のエラー"
-	if fsErr.Error() != expected {
-		t.Errorf("Error()が期待値と一致しません。\n期待値: %s\n実際値: %s", expected, fsErr.Error())
-	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Errorメソッドのテスト
+			assert.Equal(t, tc.expectedMsg, tc.fsErr.Error(), "Error()メソッドの出力が期待値と一致しません")
 
-	// Unwrapメソッドのテスト
-	if fsErr.Unwrap() != origErr {
-		t.Errorf("Unwrap()が元のエラーを返しませんでした")
-	}
-
-	// Errが無い場合
-	fsErr.Err = nil
-	expectedNoErr := "ファイルシステムエラー: TestOp /test/path: テストエラーメッセージ"
-	if fsErr.Error() != expectedNoErr {
-		t.Errorf("Error()が期待値と一致しません(Errなし)。\n期待値: %s\n実際値: %s", expectedNoErr, fsErr.Error())
+			// Unwrapメソッドのテスト（必要な場合）
+			if tc.checkUnwrap {
+				assert.Equal(t, tc.expectedUnwrap.Error(), tc.fsErr.Unwrap().Error(), "Unwrap()メソッドの出力が期待値と一致しません")
+			}
+		})
 	}
 }
 
@@ -70,42 +91,65 @@ func TestReadFile(t *testing.T) {
 	defer cleanupTestDir(t, testDir)
 
 	// テスト用ファイル作成
-	content := "line1\nline2\nline3"
-	testFile := createTestFile(t, testDir, "test.txt", content)
+	singleLineFile := createTestFile(t, testDir, "single.txt", "単一行")
+	multiLineFile := createTestFile(t, testDir, "multi.txt", "line1\nline2\nline3")
+	notExistFile := filepath.Join(testDir, "notexist.txt")
 
 	fs := NewRealFileSystem()
 
-	// 正常ケース
-	lines, err := fs.ReadFile(testFile)
-	if err != nil {
-		t.Fatalf("ReadFileが失敗: %v", err)
+	testCases := []struct {
+		name          string
+		filePath      string
+		expectedLines []string
+		expectError   bool
+		checkErrorOp  bool
+		expectedOp    string
+	}{
+		{
+			name:          "単一行ファイル",
+			filePath:      singleLineFile,
+			expectedLines: []string{"単一行"},
+			expectError:   false,
+		},
+		{
+			name:          "複数行ファイル",
+			filePath:      multiLineFile,
+			expectedLines: []string{"line1", "line2", "line3"},
+			expectError:   false,
+		},
+		{
+			name:          "存在しないファイル",
+			filePath:      notExistFile,
+			expectedLines: nil,
+			expectError:   true,
+			checkErrorOp:  true,
+			expectedOp:    "ReadFile",
+		},
 	}
 
-	expected := []string{"line1", "line2", "line3"}
-	if len(lines) != len(expected) {
-		t.Fatalf("行数が期待値と一致しません: 期待値=%d, 実際値=%d", len(expected), len(lines))
-	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			lines, err := fs.ReadFile(tc.filePath)
 
-	for i, line := range expected {
-		if lines[i] != line {
-			t.Errorf("行 %d が期待値と一致しません: 期待値=%s, 実際値=%s", i, line, lines[i])
-		}
-	}
+			// エラーの有無をチェック
+			if tc.expectError {
+				assert.Error(t, err, "エラーが発生しませんでした。エラーを期待していました")
 
-	// エラーケース - 存在しないファイル
-	_, err = fs.ReadFile(filepath.Join(testDir, "notexist.txt"))
-	if err == nil {
-		t.Error("存在しないファイルでエラーが発生しませんでした")
-	}
+				// エラー型と操作名をチェック（必要な場合）
+				if tc.checkErrorOp {
+					var fsErr *FileSystemError
+					assert.True(t, errors.As(err, &fsErr), "エラーがFileSystemErrorではありません: %T", err)
+					if fsErr != nil {
+						assert.Equal(t, tc.expectedOp, fsErr.Op, "エラー操作が期待値と一致しません")
+					}
+				}
+			} else {
+				assert.NoError(t, err, "予期しないエラーが発生しました")
 
-	// エラー型の検証
-	var fsErr *FileSystemError
-	if !errors.As(err, &fsErr) {
-		t.Errorf("エラーがFileSystemErrorではありません: %T", err)
-	} else {
-		if fsErr.Op != "ReadFile" {
-			t.Errorf("エラー操作が期待値と一致しません: 期待値=ReadFile, 実際値=%s", fsErr.Op)
-		}
+				// 内容をチェック
+				assert.Equal(t, tc.expectedLines, lines, "返された行が期待値と一致しません")
+			}
+		})
 	}
 }
 
@@ -115,53 +159,87 @@ func TestWriteFile(t *testing.T) {
 	defer cleanupTestDir(t, testDir)
 
 	fs := NewRealFileSystem()
-	testFile := filepath.Join(testDir, "output.txt")
-	content := "テスト内容\n複数行あり\n"
 
-	// 正常ケース
-	err := fs.WriteFile(testFile, content)
-	if err != nil {
-		t.Fatalf("WriteFileが失敗: %v", err)
+	testCases := []struct {
+		name        string
+		filePath    string
+		content     string
+		expectError bool
+		setup       func(*testing.T)                 // セットアップ関数
+		validate    func(*testing.T, string, string) // 検証関数
+	}{
+		{
+			name:        "通常のファイル作成",
+			filePath:    filepath.Join(testDir, "normal.txt"),
+			content:     "テスト内容\n複数行あり\n",
+			expectError: false,
+			setup:       nil,
+			validate: func(t *testing.T, path, expectedContent string) {
+				// ファイルが作成されたか確認
+				assert.FileExists(t, path, "ファイルが作成されていません")
+
+				// 内容を確認
+				data, err := os.ReadFile(path)
+				require.NoError(t, err, "ファイルの読み込みに失敗")
+				assert.Equal(t, expectedContent, string(data), "ファイル内容が期待値と一致しません")
+			},
+		},
+		{
+			name:        "サブディレクトリへの書き込み",
+			filePath:    filepath.Join(testDir, "subdir", "file.txt"),
+			content:     "サブディレクトリ内のファイル",
+			expectError: false,
+			setup:       nil,
+			validate: func(t *testing.T, path, expectedContent string) {
+				// サブディレクトリが作成されたか確認
+				dir := filepath.Dir(path)
+				assert.DirExists(t, dir, "サブディレクトリが作成されていません")
+
+				// 内容を確認
+				data, err := os.ReadFile(path)
+				require.NoError(t, err, "ファイルの読み込みに失敗")
+				assert.Equal(t, expectedContent, string(data), "ファイル内容が期待値と一致しません")
+			},
+		},
+		{
+			name:        "書き込み権限のないディレクトリ",
+			filePath:    filepath.Join(testDir, "readonly", "file.txt"),
+			content:     "書き込めないはず",
+			expectError: os.Geteuid() != 0, // rootユーザー以外の場合のみエラーを期待
+			setup: func(t *testing.T) {
+				if os.Geteuid() == 0 {
+					t.Skip("rootユーザーでは権限エラーをテストできません")
+				}
+				readonlyDir := filepath.Join(testDir, "readonly")
+				err := os.MkdirAll(readonlyDir, 0500)
+				require.NoError(t, err, "読み取り専用ディレクトリの作成に失敗")
+			},
+			validate: nil, // エラーが発生するため検証は不要
+		},
 	}
 
-	// ファイルが作成されたことを確認
-	data, err := os.ReadFile(testFile)
-	if err != nil {
-		t.Fatalf("作成されたファイルの読み込みに失敗: %v", err)
-	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// セットアップ実行（必要な場合）
+			if tc.setup != nil {
+				tc.setup(t)
+			}
 
-	if string(data) != content {
-		t.Errorf("ファイル内容が期待値と一致しません:\n期待値=%q\n実際値=%q", content, string(data))
-	}
+			// テスト対象の関数を実行
+			err := fs.WriteFile(tc.filePath, tc.content)
 
-	// サブディレクトリへの書き込みテスト
-	testSubFile := filepath.Join(testDir, "subdir", "output.txt")
-	err = fs.WriteFile(testSubFile, content)
-	if err != nil {
-		t.Fatalf("サブディレクトリへのWriteFileが失敗: %v", err)
-	}
+			// エラーの有無をチェック
+			if tc.expectError {
+				assert.Error(t, err, "エラーが発生しませんでした。エラーを期待していました")
+			} else {
+				assert.NoError(t, err, "予期しないエラーが発生しました")
 
-	// サブディレクトリが作成されたことを確認
-	if _, err := os.Stat(filepath.Join(testDir, "subdir")); err != nil {
-		t.Errorf("サブディレクトリが作成されませんでした: %v", err)
-	}
-
-	// エラーケース - 書き込み権限のないディレクトリ
-	if os.Geteuid() == 0 { // rootユーザーの場合はスキップ
-		t.Skip("rootユーザーでは権限エラーをテストできません")
-	}
-
-	// 書き込み権限のないディレクトリを作成
-	readonlyDir := filepath.Join(testDir, "readonly")
-	if err := os.MkdirAll(readonlyDir, 0500); err != nil {
-		t.Fatalf("読み取り専用ディレクトリの作成に失敗: %v", err)
-	}
-
-	readonlyFile := filepath.Join(readonlyDir, "test.txt")
-	err = fs.WriteFile(readonlyFile, content)
-	if err == nil {
-		// 権限の問題でエラーが発生するはず
-		t.Error("書き込み権限のないパスでエラーが発生しませんでした")
+				// 検証関数を実行（必要な場合）
+				if tc.validate != nil {
+					tc.validate(t, tc.filePath, tc.content)
+				}
+			}
+		})
 	}
 }
 
@@ -170,29 +248,47 @@ func TestTryReadFile(t *testing.T) {
 	testDir := setupTestDir(t)
 	defer cleanupTestDir(t, testDir)
 
-	// テスト用ファイル作成
-	content := "テスト内容"
-	testFile := createTestFile(t, testDir, "test.txt", content)
-
 	fs := NewRealFileSystem()
 
-	// 正常ケース
-	lines, err := fs.TryReadFile(testFile)
-	if err != nil {
-		t.Fatalf("TryReadFileが失敗: %v", err)
+	// テスト用ファイル作成
+	existingFile := createTestFile(t, testDir, "existing.txt", "テスト内容")
+	notExistFile := filepath.Join(testDir, "notexist.txt")
+
+	testCases := []struct {
+		name          string
+		filePath      string
+		expectedLines []string
+		expectError   bool
+	}{
+		{
+			name:          "存在するファイル",
+			filePath:      existingFile,
+			expectedLines: []string{"テスト内容"},
+			expectError:   false,
+		},
+		{
+			name:          "存在しないファイル",
+			filePath:      notExistFile,
+			expectedLines: []string{},
+			expectError:   true,
+		},
 	}
 
-	if len(lines) != 1 || lines[0] != content {
-		t.Errorf("ファイル内容が期待値と一致しません: 期待値=[%s], 実際値=%v", content, lines)
-	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// テスト対象の関数を実行
+			lines, err := fs.TryReadFile(tc.filePath)
 
-	// 存在しないファイル
-	lines, err = fs.TryReadFile(filepath.Join(testDir, "notexist.txt"))
-	if err == nil {
-		t.Error("存在しないファイルでエラーが発生しませんでした")
-	}
-	if len(lines) != 0 {
-		t.Errorf("エラー時に空のスライスが返されませんでした: %v", lines)
+			// エラーの有無をチェック
+			if tc.expectError {
+				assert.Error(t, err, "エラーが発生しませんでした。エラーを期待していました")
+			} else {
+				assert.NoError(t, err, "予期しないエラーが発生しました")
+			}
+
+			// 返された行のチェック
+			assert.Equal(t, tc.expectedLines, lines, "返された行が期待値と一致しません")
+		})
 	}
 }
 
@@ -202,37 +298,64 @@ func TestTryWriteFile(t *testing.T) {
 	defer cleanupTestDir(t, testDir)
 
 	fs := NewRealFileSystem()
-	testFile := filepath.Join(testDir, "output.txt")
-	content := "テスト内容"
 
-	// 正常ケース
-	err := fs.TryWriteFile(testFile, content)
-	if err != nil {
-		t.Fatalf("TryWriteFileが失敗: %v", err)
+	testCases := []struct {
+		name        string
+		filePath    string
+		content     string
+		setup       func(*testing.T)
+		validate    func(*testing.T, string, string)
+		expectError bool
+	}{
+		{
+			name:        "通常のファイル作成",
+			filePath:    filepath.Join(testDir, "normal.txt"),
+			content:     "テスト内容",
+			expectError: false,
+			validate: func(t *testing.T, path, expectedContent string) {
+				data, err := os.ReadFile(path)
+				require.NoError(t, err, "ファイルの読み込みに失敗")
+				assert.Equal(t, expectedContent, string(data), "ファイル内容が期待値と一致しません")
+			},
+		},
+		{
+			name:        "書き込み権限のないディレクトリ",
+			filePath:    filepath.Join(testDir, "readonly", "file.txt"),
+			content:     "書き込めないはず",
+			expectError: os.Geteuid() != 0,
+			setup: func(t *testing.T) {
+				if os.Geteuid() == 0 {
+					t.Skip("rootユーザーでは権限エラーをテストできません")
+				}
+				readonlyDir := filepath.Join(testDir, "readonly")
+				err := os.MkdirAll(readonlyDir, 0500)
+				require.NoError(t, err, "読み取り専用ディレクトリの作成に失敗")
+			},
+		},
 	}
 
-	// ファイル内容の確認
-	data, err := os.ReadFile(testFile)
-	if err != nil {
-		t.Fatalf("作成されたファイルの読み込みに失敗: %v", err)
-	}
-	if string(data) != content {
-		t.Errorf("ファイル内容が期待値と一致しません: 期待値=%s, 実際値=%s", content, string(data))
-	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// セットアップ実行（必要な場合）
+			if tc.setup != nil {
+				tc.setup(t)
+			}
 
-	// エラーケースでも関数は完了する
-	if os.Geteuid() != 0 { // rootユーザー以外の場合
-		readonlyDir := filepath.Join(testDir, "readonly")
-		if err := os.MkdirAll(readonlyDir, 0500); err != nil {
-			t.Fatalf("読み取り専用ディレクトリの作成に失敗: %v", err)
-		}
+			// テスト対象の関数を実行
+			err := fs.TryWriteFile(tc.filePath, tc.content)
 
-		readonlyFile := filepath.Join(readonlyDir, "test.txt")
-		err = fs.TryWriteFile(readonlyFile, content)
-		// エラーは返すが、関数は正常に戻る
-		if err == nil {
-			t.Error("書き込み権限のないパスでエラーが発生しませんでした")
-		}
+			// エラーの有無をチェック
+			if tc.expectError {
+				assert.Error(t, err, "エラーが発生しませんでした。エラーを期待していました")
+			} else {
+				assert.NoError(t, err, "予期しないエラーが発生しました")
+
+				// 検証関数を実行（必要な場合）
+				if tc.validate != nil {
+					tc.validate(t, tc.filePath, tc.content)
+				}
+			}
+		})
 	}
 }
 
@@ -242,63 +365,180 @@ func TestMkdirAll(t *testing.T) {
 	defer cleanupTestDir(t, testDir)
 
 	fs := NewRealFileSystem()
-	testSubDir := filepath.Join(testDir, "a", "b", "c")
 
-	// 正常ケース
-	err := fs.MkdirAll(testSubDir)
-	if err != nil {
-		t.Fatalf("MkdirAllが失敗: %v", err)
+	testCases := []struct {
+		name        string
+		dirPath     string
+		setup       func(*testing.T)
+		validate    func(*testing.T, string)
+		expectError bool
+	}{
+		{
+			name:        "通常のディレクトリ作成",
+			dirPath:     filepath.Join(testDir, "a", "b", "c"),
+			expectError: false,
+			validate: func(t *testing.T, path string) {
+				assert.DirExists(t, path, "ディレクトリが作成されていません")
+			},
+		},
+		{
+			name:    "既存のディレクトリ",
+			dirPath: filepath.Join(testDir, "existing"),
+			setup: func(t *testing.T) {
+				err := os.MkdirAll(filepath.Join(testDir, "existing"), 0755)
+				require.NoError(t, err, "既存ディレクトリの作成に失敗")
+			},
+			expectError: false,
+			validate: func(t *testing.T, path string) {
+				assert.DirExists(t, path, "ディレクトリが存在しません")
+			},
+		},
+		{
+			name:        "権限のないパス",
+			dirPath:     "/root/test-dir",
+			expectError: os.Geteuid() != 0 && fileExists("/root"),
+			setup: func(t *testing.T) {
+				if os.Geteuid() == 0 {
+					t.Skip("rootユーザーでは権限エラーをテストできません")
+				}
+				if !fileExists("/root") {
+					t.Skip("rootディレクトリが存在しないためテストをスキップします")
+				}
+			},
+			validate: nil,
+		},
 	}
 
-	// ディレクトリが作成されたことを確認
-	if _, err := os.Stat(testSubDir); err != nil {
-		t.Errorf("ディレクトリが作成されませんでした: %v", err)
-	}
-
-	// 既存のディレクトリに対して実行
-	err = fs.MkdirAll(testSubDir)
-	if err != nil {
-		t.Errorf("既存のディレクトリに対するMkdirAllがエラーを返しました: %v", err)
-	}
-
-	// エラーケース - 権限のないパス
-	if os.Geteuid() == 0 {
-		t.Skip("rootユーザーでは権限エラーをテストできません")
-	}
-
-	// Unixシステムでのみ有効なテスト
-	if _, err := os.Stat("/root"); err == nil {
-		err = fs.MkdirAll("/root/test-dir")
-		if err == nil {
-			t.Error("権限のないパスでエラーが発生しませんでした")
-		}
-
-		var fsErr *FileSystemError
-		if !errors.As(err, &fsErr) {
-			t.Errorf("エラーがFileSystemErrorではありません: %T", err)
-		} else {
-			if fsErr.Op != "MkdirAll" {
-				t.Errorf("エラー操作が期待値と一致しません: 期待値=MkdirAll, 実際値=%s", fsErr.Op)
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// セットアップ実行（必要な場合）
+			if tc.setup != nil {
+				tc.setup(t)
 			}
-		}
+
+			// テスト対象の関数を実行
+			err := fs.MkdirAll(tc.dirPath)
+
+			// エラーの有無をチェック
+			if tc.expectError {
+				assert.Error(t, err, "エラーが発生しませんでした。エラーを期待していました")
+
+				// エラーがFileSystemErrorか確認
+				var fsErr *FileSystemError
+				assert.True(t, errors.As(err, &fsErr), "エラーがFileSystemErrorではありません")
+				if fsErr != nil {
+					assert.Equal(t, "MkdirAll", fsErr.Op, "エラー操作が期待値と一致しません")
+				}
+			} else {
+				assert.NoError(t, err, "予期しないエラーが発生しました")
+
+				// 検証関数を実行（必要な場合）
+				if tc.validate != nil {
+					tc.validate(t, tc.dirPath)
+				}
+			}
+		})
 	}
+}
+
+// ファイルやディレクトリが存在するか確認するヘルパー関数
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
 
 // NewRealFileSystemのテスト
 func TestNewRealFileSystem(t *testing.T) {
-	fs := NewRealFileSystem()
+	t.Run("正しい型を返すこと", func(t *testing.T) {
+		fs := NewRealFileSystem()
+		_, ok := interface{}(fs).(*RealFileSystem)
+		assert.True(t, ok, "NewRealFileSystemが正しい型を返しませんでした: %T", fs)
+	})
 
-	// 正しい型を返すことを確認
-	_, ok := fs.(*RealFileSystem)
-	if !ok {
-		t.Errorf("NewRealFileSystemが正しい型を返しませんでした: %T", fs)
-	}
-
-	// インターフェースを満たしていることを確認
-	var _ FileSystem = fs
+	t.Run("インターフェースを満たすこと", func(t *testing.T) {
+		fs := NewRealFileSystem()
+		var fsInterface FileSystem = fs
+		assert.NotNil(t, fsInterface, "RealFileSystemがFileSystemインターフェースを満たしていません")
+	})
 }
 
-// モックファイルシステムテスト（オプション）
+// モックファイルシステムテスト
+func TestMockFileSystem(t *testing.T) {
+	// モックファイルシステムがインターフェースを満たしていることを確認
+	t.Run("インターフェースを満たすこと", func(t *testing.T) {
+		var _ FileSystem = &MockFileSystem{}
+	})
+
+	testCases := []struct {
+		name           string
+		mockFunc       func() *MockFileSystem
+		operation      func(*MockFileSystem) (interface{}, error)
+		expectedResult interface{}
+		expectError    bool
+	}{
+		{
+			name: "ReadFile - 成功",
+			mockFunc: func() *MockFileSystem {
+				return &MockFileSystem{
+					ReadFileFunc: func(path string) ([]string, error) {
+						return []string{"mocked line"}, nil
+					},
+				}
+			},
+			operation: func(m *MockFileSystem) (interface{}, error) {
+				return m.ReadFile("dummy")
+			},
+			expectedResult: []string{"mocked line"},
+			expectError:    false,
+		},
+		{
+			name: "ReadFile - エラー",
+			mockFunc: func() *MockFileSystem {
+				return &MockFileSystem{
+					ReadFileFunc: func(path string) ([]string, error) {
+						return nil, errors.New("mock error")
+					},
+				}
+			},
+			operation: func(m *MockFileSystem) (interface{}, error) {
+				return m.ReadFile("dummy")
+			},
+			expectedResult: nil,
+			expectError:    true,
+		},
+		{
+			name: "WriteFile - 成功",
+			mockFunc: func() *MockFileSystem {
+				return &MockFileSystem{
+					WriteFileFunc: func(path string, content string) error {
+						return nil
+					},
+				}
+			},
+			operation: func(m *MockFileSystem) (interface{}, error) {
+				return nil, m.WriteFile("dummy", "test")
+			},
+			expectedResult: nil,
+			expectError:    false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			mock := tc.mockFunc()
+			result, err := tc.operation(mock)
+
+			if tc.expectError {
+				assert.Error(t, err, "エラーが発生しませんでした。エラーを期待していました")
+			} else {
+				assert.NoError(t, err, "予期しないエラーが発生しました")
+				assert.Equal(t, tc.expectedResult, result, "結果が期待値と一致しません")
+			}
+		})
+	}
+}
+
+// MockFileSystem の実装
 type MockFileSystem struct {
 	ReadFileFunc     func(path string) ([]string, error)
 	WriteFileFunc    func(path string, content string) error
@@ -325,23 +565,4 @@ func (m *MockFileSystem) TryReadFile(path string) ([]string, error) {
 
 func (m *MockFileSystem) TryWriteFile(path string, content string) error {
 	return m.TryWriteFileFunc(path, content)
-}
-
-func TestMockFileSystem(t *testing.T) {
-	// モックファイルシステムがインターフェースを満たしていることを確認
-	var _ FileSystem = &MockFileSystem{}
-
-	mock := &MockFileSystem{
-		ReadFileFunc: func(path string) ([]string, error) {
-			return []string{"mocked line"}, nil
-		},
-	}
-
-	lines, err := mock.ReadFile("dummy")
-	if err != nil {
-		t.Errorf("モックReadFileが失敗: %v", err)
-	}
-	if len(lines) != 1 || lines[0] != "mocked line" {
-		t.Errorf("モックが期待値を返しませんでした: %v", lines)
-	}
 }
