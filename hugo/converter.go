@@ -91,16 +91,28 @@ func (h *HugoConverter) Convert(inputPath string, outputBaseDir string) error {
 	articleMaps := movabletype.ParseExportFile(lines)
 	articles := movabletype.ConvertToArticleStructs(articleMaps)
 
-	fmt.Printf("処理対象記事数: %d\n", len(articles))
+	totalArticles := len(articles)
+	fmt.Printf("処理対象記事数: %d\n", totalArticles)
+	startTime := time.Now()
 
 	// 記事ごとに処理
-	for _, article := range articles {
+	for i, article := range articles {
+		// 現在の進捗率を計算
+		progressPercent := float64(i+1) / float64(totalArticles) * 100
+		elapsed := time.Since(startTime)
+
+		// 進捗状況を表示（記事タイトルなし）
+		fmt.Printf("進捗: %.1f%% (%d/%d) - 経過時間: %v\r",
+			progressPercent, i+1, totalArticles, elapsed.Round(time.Second))
+
 		if err := h.processArticle(article, outputBaseDir); err != nil {
-			fmt.Printf("警告: 記事処理エラー: %v\n", err)
+			fmt.Printf("\n警告: 記事処理エラー: %v\n", err)
 			// エラーが発生しても処理を続行
 		}
 	}
 
+	// 処理完了後、改行を入れて見やすくする
+	fmt.Println()
 	return nil
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"mt2hugo/converter" // converterパッケージをインポート
 	"mt2hugo/fs"
@@ -32,9 +33,13 @@ func main() {
 
 	// 変換の実行
 	filePath := os.Args[1]
+	fmt.Printf("処理を開始します: %s\n", filePath)
+
+	start := time.Now()
 	if err := hugoConverter.Convert(filePath, "output"); err != nil {
 		fmt.Println("Hugoファイル作成エラー:", err)
 	} else {
-		fmt.Println("変換が完了しました")
+		elapsed := time.Since(start)
+		fmt.Printf("変換が完了しました（所要時間: %v）\n", elapsed)
 	}
 }
