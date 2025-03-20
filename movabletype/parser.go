@@ -35,6 +35,8 @@ func ParseExportFile(lines []string) []map[string]string {
 	var currentKey string
 	var bodyContent string
 	var inBody bool
+	var inExtendedBody bool // EXTENDED BODY セクションフラグを追加
+	var inComment bool      // コメントセクションフラグを追加
 
 	for i, line := range lines {
 		// 新しい記事の開始
@@ -50,6 +52,8 @@ func ParseExportFile(lines []string) []map[string]string {
 			currentKey = ""
 			bodyContent = ""
 			inBody = false
+			inExtendedBody = false // 新しい記事の初期化時にリセット
+			inComment = false      // コメントフラグもリセット
 			continue
 		}
 
@@ -60,17 +64,43 @@ func ParseExportFile(lines []string) []map[string]string {
 
 		// セクションの区切り
 		if line == "-----" {
+			// COMMENT セクションの開始を検出
+			if i+1 < len(lines) && strings.HasPrefix(lines[i+1], "COMMENT:") {
+				inComment = true
+				inBody = false
+				inExtendedBody = false
+				continue
+			}
+
 			// BODYセクションの開始を検出
 			if i+1 < len(lines) && strings.HasPrefix(lines[i+1], "BODY:") {
 				inBody = true
+				inExtendedBody = false
+				inComment = false
 				continue
 			}
-			// BODYセクションの終了
-			if inBody {
+
+			// EXTENDED BODYセクションの開始を検出
+			if i+1 < len(lines) && strings.HasPrefix(lines[i+1], "EXTENDED BODY:") {
+				inExtendedBody = true
 				inBody = false
+				inComment = false
+				continue
+			}
+
+			// 各セクションの終了
+			if inBody || inExtendedBody || inComment {
+				inBody = false
+				inExtendedBody = false
+				inComment = false
 				continue
 			}
 			continue
+		}
+
+		// コメントセクションの場合はスキップ
+		if inComment {
+			continue // コメント行は完全に無視
 		}
 
 		// BODYセクションの場合
@@ -79,6 +109,17 @@ func ParseExportFile(lines []string) []map[string]string {
 			if strings.HasPrefix(line, "BODY:") {
 				continue
 			}
+			bodyContent += line + "\n"
+			continue
+		}
+
+		// EXTENDED BODYセクションの場合
+		if inExtendedBody {
+			// EXTENDED BODYヘッダーをスキップ
+			if strings.HasPrefix(line, "EXTENDED BODY:") {
+				continue
+			}
+			// BODY内容と同様に追加
 			bodyContent += line + "\n"
 			continue
 		}
