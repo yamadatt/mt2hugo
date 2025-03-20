@@ -3,10 +3,10 @@ title: "{{ .Title }}"
 date: {{ .Date }}
 slug: {{ .Slug }}
 {{ if .Category }}category:
-  - {{ .Category }}
+  - "{{ .Category }}"
 {{ end }}
 {{ if .Tags }}tags:
-{{ range .Tags }}  - {{ . }}
+{{ range .Tags }}  - "{{ . }}"
 {{ end }}{{ end }}
 {{ if .Image }}cover:
     image: "{{ .Image }}"
