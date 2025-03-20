@@ -3,7 +3,6 @@ package hugo
 import (
 	"fmt"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"text/template"
 	"time"
@@ -13,6 +12,7 @@ import (
 	"mt2hugo/movabletype"
 	"mt2hugo/reporter" // reporter パッケージをインポート
 	"mt2hugo/util"
+	"mt2hugo/validator" // バリデーターパッケージをインポート
 )
 
 // HugoConverter は記事変換を行う構造体
@@ -22,13 +22,18 @@ type HugoConverter struct {
 	tmpl       *template.Template
 	noMarkdown bool
 	formatHTML bool
-	reporter   reporter.Reporter // インターフェースに変更
+	reporter   reporter.Reporter           // インターフェースに変更
+	validator  *validator.ArticleValidator // バリデーターを追加
 }
 
 // NewConverter はHugoConverterの新しいインスタンスを作成する
 func NewConverter(fileSystem fs.FileSystem, htmlConverter converter.HTMLConverter,
 	tmpl *template.Template, reporter reporter.Reporter,
 	noMarkdown bool, formatHTML bool) *HugoConverter {
+
+	// バリデーターを作成
+	articleValidator := validator.NewArticleValidator(reporter)
+
 	return &HugoConverter{
 		fs:         fileSystem,
 		converter:  htmlConverter,
@@ -36,6 +41,7 @@ func NewConverter(fileSystem fs.FileSystem, htmlConverter converter.HTMLConverte
 		noMarkdown: noMarkdown,
 		formatHTML: formatHTML,
 		reporter:   reporter,
+		validator:  articleValidator,
 	}
 }
 
@@ -56,6 +62,17 @@ type HugoArticle struct {
 func (h *HugoConverter) ConvertEntries(articles []movabletype.Article, outputBaseDir string) error {
 	// 記事ごとに処理（進捗表示は外部から行う）
 	for _, article := range articles {
+		// 記事のバリデーション
+		if err := h.validator.ValidateArticle(article); err != nil {
+			if h.reporter != nil {
+				h.reporter.PrintWarning("記事バリデーションエラー: %v", err)
+			} else {
+				fmt.Printf("\n警告: 記事バリデーションエラー: %v\n", err)
+			}
+			continue // バリデーションに失敗した記事はスキップ
+		}
+
+		// 記事の処理
 		if err := h.processArticle(article, outputBaseDir); err != nil {
 			if h.reporter != nil {
 				h.reporter.PrintWarning("記事処理エラー: %v", err)
@@ -71,18 +88,6 @@ func (h *HugoConverter) ConvertEntries(articles []movabletype.Article, outputBas
 
 // 単一記事の処理
 func (h *HugoConverter) processArticle(article movabletype.Article, outputBaseDir string) error {
-	// 日付情報の取得
-	if article.Date == "" {
-		// エラーメッセージに記事のタイトルと識別情報を追加
-		title := "無題"
-		if article.Title != "" {
-			title = article.Title
-		}
-
-		return fmt.Errorf("DATEフィールドがありません (記事: %s)", title)
-
-	}
-
 	// 日付文字列をパース
 	t, err := util.ParseArticleDate(article.Date)
 	if err != nil {
@@ -96,18 +101,6 @@ func (h *HugoConverter) processArticle(article movabletype.Article, outputBaseDi
 	// ディレクトリを作成
 	if err := h.fs.MkdirAll(dirPath); err != nil {
 		return fmt.Errorf("ディレクトリ作成エラー: %v", err)
-	}
-
-	// カテゴリに特殊文字が含まれているか確認
-	invalidCharsRegex := regexp.MustCompile(`[@#$%&*!?+=/\\:;"'` + "`" + `\(\)\[\]\{\}]`)
-	if invalidCharsRegex.MatchString(article.Category) {
-		// レポーター経由で警告表示
-		if h.reporter != nil {
-			h.reporter.PrintWarning("カテゴリ '%s' に特殊文字が含まれています。Hugo で問題が発生する可能性があります。", article.Category)
-		} else {
-			// レポーターがない場合は従来通り
-			fmt.Printf("\n警告: カテゴリ '%s' に特殊文字が含まれています。Hugo で問題が発生する可能性があります。\n", article.Category)
-		}
 	}
 
 	// Hugoデータの準備
