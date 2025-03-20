@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 	"time"
@@ -144,6 +145,12 @@ func (h *HugoConverter) processArticle(article movabletype.Article, outputBaseDi
 	// ディレクトリを作成
 	if err := h.fs.MkdirAll(dirPath); err != nil {
 		return fmt.Errorf("ディレクトリ作成エラー: %v", err)
+	}
+
+	// カテゴリに特殊文字が含まれているか確認
+	invalidCharsRegex := regexp.MustCompile(`[@#$%&*!?+=/\\:;"'` + "`" + `\(\)\[\]\{\}]`)
+	if invalidCharsRegex.MatchString(article.Category) {
+		fmt.Printf("\n警告: カテゴリ '%s' に特殊文字が含まれています。Hugo で問題が発生する可能性があります。\n", article.Category)
 	}
 
 	// Hugoデータの準備
