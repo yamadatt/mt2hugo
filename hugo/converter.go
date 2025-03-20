@@ -83,18 +83,8 @@ type HugoArticle struct {
 	Content  string
 }
 
-// Convert はファイルを変換するメイン処理
-func (h *HugoConverter) Convert(inputPath string, outputBaseDir string) error {
-	// ファイル読み込み
-	lines, err := h.fs.ReadFile(inputPath)
-	if err != nil {
-		return fmt.Errorf("エクスポートファイル読み込みエラー: %v", err)
-	}
-
-	// パース処理
-	articleMaps := movabletype.ParseExportFile(lines)
-	articles := movabletype.ConvertToArticleStructs(articleMaps)
-
+// ConvertEntries は既にパース済みの記事配列をHugo形式に変換する
+func (h *HugoConverter) ConvertEntries(articles []movabletype.Article, outputBaseDir string) error {
 	totalArticles := len(articles)
 	fmt.Printf("処理対象記事数: %d\n", totalArticles)
 	startTime := time.Now()
@@ -105,7 +95,7 @@ func (h *HugoConverter) Convert(inputPath string, outputBaseDir string) error {
 		progressPercent := float64(i+1) / float64(totalArticles) * 100
 		elapsed := time.Since(startTime)
 
-		// 進捗状況を表示（記事タイトルなし）
+		// 進捗状況を表示
 		fmt.Printf("進捗: %.1f%% (%d/%d) - 経過時間: %v\r",
 			progressPercent, i+1, totalArticles, elapsed.Round(time.Second))
 
@@ -200,7 +190,8 @@ func prepareHugoData(article movabletype.Article, t time.Time) HugoArticle {
 	}
 
 	// slugの決定: BASENAMEがあれば使用し、なければタイトルからスラグを生成
-	slug := article.Basename
+	// slug := article.Basename　//デバッグのために一旦無効化
+	slug := ""
 	if slug == "" {
 		slug = util.CreateSlug(title)
 	}

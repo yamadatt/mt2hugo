@@ -1,6 +1,7 @@
 package util
 
 import (
+	"crypto/md5"
 	"fmt"
 	"strings"
 	"time"
@@ -32,9 +33,12 @@ func FormatDirName(t time.Time) string {
 
 // CreateSlug はタイトルからURLスラグを生成する
 func CreateSlug(title string) string {
-	slug := strings.ReplaceAll(title, " ", "-")
-	slug = strings.ReplaceAll(slug, "/", "-")
-	slug = strings.ReplaceAll(slug, "\\", "-")
-	slug = strings.ReplaceAll(slug, ":", "-")
-	return slug
+	// slug := strings.ReplaceAll(title, " ", "-")
+	// slug = strings.ReplaceAll(slug, "/", "-")
+	// slug = strings.ReplaceAll(slug, "\\", "-")
+	// slug = strings.ReplaceAll(slug, ":", "-")
+	// return slug
+	// タイトルのハッシュ値を使用して一意のIDを生成
+	hash := md5.Sum([]byte(title))
+	return fmt.Sprintf("%x", hash)[:8] // 最初の8文字を使用
 }

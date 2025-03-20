@@ -190,4 +190,6 @@ type FileSystem interface {
 - 画像ファイルの自動抽出と整理機能
 - HTML整形オプションのカスタマイズ機能
 - テスト範囲のさらなる拡充
+- slugをbasenameから受け取るが、その際日本語名だったら変換する。今はハッシュ値
+- ExtendedBodyもいれる。
 
