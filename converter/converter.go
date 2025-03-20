@@ -11,6 +11,7 @@ import (
 type HTMLConverter interface {
 	ConvertHTMLToMarkdown(html string) (string, error)
 	FormatHTMLWithIndentation(html string) (string, error)
+	FormatHTML(html string) string
 }
 
 // HTMLToMarkdownConverter は実際のコンバーター実装
@@ -59,4 +60,15 @@ func (c *HTMLToMarkdownConverter) FormatHTMLWithIndentation(htmlContent string) 
 	formatted = formatConsecutiveEmptyLines(formatted)
 
 	return formatted, nil
+}
+
+// FormatHTML はHTMLを整形して返す
+// FormatHTMLWithIndentationのラッパーとして機能し、エラーを無視します
+func (c *HTMLToMarkdownConverter) FormatHTML(html string) string {
+	formatted, err := c.FormatHTMLWithIndentation(html)
+	if err != nil {
+		// エラーが発生した場合は元のHTMLを返す
+		return html
+	}
+	return formatted
 }

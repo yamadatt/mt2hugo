@@ -45,7 +45,13 @@ showtoc: false
 {{ if .Summary }}summary: "{{ .Summary }}"{{ end }}
 ---
 
-{{ .Content }}
+{{ .Body }}
+
+{{ if .ExtendedBody }}
+<!--more-->
+
+{{ .ExtendedBody }}
+{{ end }}
 `
 
 // LoadTemplate はHugoテンプレートを読み込む
@@ -73,14 +79,15 @@ func NewConverter(fileSystem fs.FileSystem, htmlConverter converter.HTMLConverte
 
 // HugoArticle は、Hugoの記事データ構造体
 type HugoArticle struct {
-	Title    string
-	Date     string
-	Slug     string
-	Category string
-	Tags     []string
-	Image    string
-	Summary  string
-	Content  string
+	Title        string
+	Date         string
+	Slug         string
+	Category     string
+	Tags         []string
+	Image        string
+	Summary      string
+	Body         string
+	ExtendedBody string
 }
 
 // ConvertEntries は既にパース済みの記事配列をHugo形式に変換する
@@ -143,33 +150,49 @@ func (h *HugoConverter) processArticle(article movabletype.Article, outputBaseDi
 	hugoData := prepareHugoData(article, t)
 
 	// 本文の処理
-	if article.Body != "" {
+	var processedBody string
+	if h.noMarkdown {
+		// HTMLをそのまま出力（整形オプションの有無で処理が変わる）
+		if h.formatHTML {
+			processedBody, err = h.converter.FormatHTMLWithIndentation(article.Body)
+			if err != nil {
+				return fmt.Errorf("HTMLのbeautifulえらー: %v", err)
+			}
+		} else {
+			processedBody = article.Body
+		}
+	} else {
+		// HTMLをMarkdownに変換
+		processedBody, err = h.converter.ConvertHTMLToMarkdown(article.Body)
+		if err != nil {
+			return fmt.Errorf("Markdown変換エラー: %v", err)
+		}
+	}
+
+	// ExtendedBody の処理を追加
+	var processedExtendedBody string
+	if article.ExtendedBody != "" {
 		if h.noMarkdown {
-			// Markdown変換をスキップ
+			// HTMLをそのまま出力（整形オプションの有無で処理が変わる）
 			if h.formatHTML {
-				// HTMLを階層構造でフォーマット
-				formattedHTML, err := h.converter.FormatHTMLWithIndentation(article.Body)
+				processedExtendedBody, err = h.converter.FormatHTMLWithIndentation(article.ExtendedBody)
 				if err != nil {
-					fmt.Println("警告: HTML整形エラー:", err)
-					hugoData.Content = article.Body
-				} else {
-					hugoData.Content = formattedHTML
+					return fmt.Errorf("HTMLのbeautifulえらー: %v", err)
 				}
 			} else {
-				// そのままのHTMLを使用
-				hugoData.Content = article.Body
+				processedExtendedBody = article.ExtendedBody
 			}
 		} else {
 			// HTMLをMarkdownに変換
-			markdown, err := h.converter.ConvertHTMLToMarkdown(article.Body)
+			processedExtendedBody, err = h.converter.ConvertHTMLToMarkdown(article.ExtendedBody)
 			if err != nil {
-				fmt.Println("警告: HTML→Markdown変換エラー:", err)
-				hugoData.Content = article.Body
-			} else {
-				hugoData.Content = markdown
+				return fmt.Errorf("Markdown変換エラー: %v", err)
 			}
 		}
 	}
+
+	hugoData.Body = processedBody
+	hugoData.ExtendedBody = processedExtendedBody // 追加: 処理した拡張本文を設定
 
 	// テンプレートを使って出力内容を生成
 	var output strings.Builder
@@ -197,12 +220,13 @@ func prepareHugoData(article movabletype.Article, t time.Time) HugoArticle {
 	}
 
 	hugoData := HugoArticle{
-		Title:    strings.ReplaceAll(title, "\"", "\\\""),
-		Date:     t.Format("2006-01-02T15:04:05-07:00"),
-		Slug:     slug,
-		Category: article.Category,
-		Image:    article.Image,
-		Summary:  strings.ReplaceAll(article.Excerpt, "\"", "\\\""),
+		Title:        strings.ReplaceAll(title, "\"", "\\\""),
+		Date:         t.Format("2006-01-02T15:04:05-07:00"),
+		Slug:         slug,
+		Category:     article.Category,
+		Image:        article.Image,
+		Summary:      strings.ReplaceAll(article.Excerpt, "\"", "\\\""),
+		ExtendedBody: "", // 初期値は空文字、後で設定
 	}
 
 	// タグの処理

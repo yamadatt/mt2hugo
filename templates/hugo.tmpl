@@ -19,4 +19,10 @@ showtoc: false
 {{ if .Summary }}summary: "{{ .Summary }}"{{ end }}
 ---
 
-{{ .Content }}
+{{ .Body }}
+
+{{ if .ExtendedBody }}
+<!--more-->
+
+{{ .ExtendedBody }}
+{{ end }}

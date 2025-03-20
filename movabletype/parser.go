@@ -48,6 +48,7 @@ func ParseFile(filePath string) ([]Article, error) {
 			Title:         entry.Title,
 			Date:          dateStr,
 			Body:          entry.Body,
+			ExtendedBody:  entry.ExtendedBody,
 			Category:      categoryStr,
 			Keywords:      entry.Keywords,
 			Excerpt:       entry.Excerpt,

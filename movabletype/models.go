@@ -5,6 +5,7 @@ type Article struct {
 	Title         string
 	Date          string
 	Body          string
+	ExtendedBody  string
 	Category      string
 	Keywords      string
 	Excerpt       string
