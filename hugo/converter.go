@@ -2,79 +2,40 @@ package hugo
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"text/template"
 	"time"
 
-	"mt2hugo/converter" // converterパッケージをインポート
+	"mt2hugo/converter"
 	"mt2hugo/fs"
 	"mt2hugo/movabletype"
+	"mt2hugo/reporter" // reporter パッケージをインポート
 	"mt2hugo/util"
 )
 
 // HugoConverter は記事変換を行う構造体
 type HugoConverter struct {
 	fs         fs.FileSystem
-	converter  converter.HTMLConverter // インターフェース型を使用
+	converter  converter.HTMLConverter
 	tmpl       *template.Template
-	noMarkdown bool // Markdownへの変換をスキップするフラグ
-	formatHTML bool // HTMLを階層構造でフォーマットするフラグ
-}
-
-// デフォルトのテンプレート文字列
-const DefaultTemplate = `---
-title: "{{ .Title }}"
-date: {{ .Date }}
-slug: {{ .Slug }}
-{{ if .Category }}category:
-  - "{{ .Category }}"
-{{ end }}
-{{ if .Tags }}tags:
-{{ range .Tags }}  - "{{ . }}"
-{{ end }}{{ end }}
-{{ if .Image }}cover:
-    image: "{{ .Image }}"
-    alt: "{{ .Title }}"
-    hidden: true
-    caption: "{{ .Title }}"
-{{ end }}
-draft: false
-showtoc: false
-{{ if .Summary }}summary: "{{ .Summary }}"{{ end }}
----
-
-{{ .Body }}
-
-{{ if .ExtendedBody }}
-<!--more-->
-
-{{ .ExtendedBody }}
-{{ end }}
-`
-
-// LoadTemplate はHugoテンプレートを読み込む
-func LoadTemplate(templatePath string) (*template.Template, error) {
-	// テンプレートファイルが存在するか確認
-	if _, err := os.Stat(templatePath); os.IsNotExist(err) {
-		// テンプレートファイルがない場合はデフォルトテンプレートを使用
-		return template.New("hugo").Parse(DefaultTemplate)
-	}
-
-	// テンプレートファイルを読み込む
-	return template.ParseFiles(templatePath)
+	noMarkdown bool
+	formatHTML bool
+	reporter   reporter.Reporter // インターフェースに変更
 }
 
 // NewConverter はHugoConverterの新しいインスタンスを作成する
-func NewConverter(fileSystem fs.FileSystem, htmlConverter converter.HTMLConverter, tmpl *template.Template, noMarkdown bool, formatHTML bool) *HugoConverter {
+func NewConverter(fileSystem fs.FileSystem, htmlConverter converter.HTMLConverter,
+	tmpl *template.Template, reporter reporter.Reporter,
+	noMarkdown bool, formatHTML bool) *HugoConverter {
 	return &HugoConverter{
 		fs:         fileSystem,
 		converter:  htmlConverter,
 		tmpl:       tmpl,
 		noMarkdown: noMarkdown,
 		formatHTML: formatHTML,
+		reporter:   reporter,
 	}
 }
 
@@ -93,28 +54,18 @@ type HugoArticle struct {
 
 // ConvertEntries は既にパース済みの記事配列をHugo形式に変換する
 func (h *HugoConverter) ConvertEntries(articles []movabletype.Article, outputBaseDir string) error {
-	totalArticles := len(articles)
-	fmt.Printf("処理対象記事数: %d\n", totalArticles)
-	startTime := time.Now()
-
-	// 記事ごとに処理
-	for i, article := range articles {
-		// 現在の進捗率を計算
-		progressPercent := float64(i+1) / float64(totalArticles) * 100
-		elapsed := time.Since(startTime)
-
-		// 進捗状況を表示
-		fmt.Printf("進捗: %.1f%% (%d/%d) - 経過時間: %v\r",
-			progressPercent, i+1, totalArticles, elapsed.Round(time.Second))
-
+	// 記事ごとに処理（進捗表示は外部から行う）
+	for _, article := range articles {
 		if err := h.processArticle(article, outputBaseDir); err != nil {
-			fmt.Printf("\n警告: 記事処理エラー: %v\n", err)
+			if h.reporter != nil {
+				h.reporter.PrintWarning("記事処理エラー: %v", err)
+			} else {
+				fmt.Printf("\n警告: 記事処理エラー: %v\n", err)
+			}
 			// エラーが発生しても処理を続行
 		}
 	}
 
-	// 処理完了後、改行を入れて見やすくする
-	fmt.Println()
 	return nil
 }
 
@@ -150,7 +101,13 @@ func (h *HugoConverter) processArticle(article movabletype.Article, outputBaseDi
 	// カテゴリに特殊文字が含まれているか確認
 	invalidCharsRegex := regexp.MustCompile(`[@#$%&*!?+=/\\:;"'` + "`" + `\(\)\[\]\{\}]`)
 	if invalidCharsRegex.MatchString(article.Category) {
-		fmt.Printf("\n警告: カテゴリ '%s' に特殊文字が含まれています。Hugo で問題が発生する可能性があります。\n", article.Category)
+		// レポーター経由で警告表示
+		if h.reporter != nil {
+			h.reporter.PrintWarning("カテゴリ '%s' に特殊文字が含まれています。Hugo で問題が発生する可能性があります。", article.Category)
+		} else {
+			// レポーターがない場合は従来通り
+			fmt.Printf("\n警告: カテゴリ '%s' に特殊文字が含まれています。Hugo で問題が発生する可能性があります。\n", article.Category)
+		}
 	}
 
 	// Hugoデータの準備
@@ -210,6 +167,11 @@ func (h *HugoConverter) processArticle(article movabletype.Article, outputBaseDi
 	// ファイルに書き込み
 	filePath := filepath.Join(dirPath, "index.md")
 	return h.fs.WriteFile(filePath, output.String())
+}
+
+// ProcessArticle は単一記事を処理する（公開メソッド版）
+func (h *HugoConverter) ProcessArticle(article movabletype.Article, outputBaseDir string) error {
+	return h.processArticle(article, outputBaseDir)
 }
 
 // HugoArticleデータを準備する

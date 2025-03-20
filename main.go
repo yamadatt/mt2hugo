@@ -10,7 +10,9 @@ import (
 	"mt2hugo/converter"
 	"mt2hugo/fs"
 	"mt2hugo/hugo"
-	"mt2hugo/movabletype" // 自前のパッケージを追加
+	"mt2hugo/movabletype"
+	"mt2hugo/reporter"
+	"mt2hugo/templates"
 )
 
 // エントリーポイント
@@ -34,7 +36,7 @@ func main() {
 	htmlConverter := converter.NewHTMLToMarkdownConverter()
 
 	// テンプレートの読み込み
-	tmpl, err := hugo.LoadTemplate("templates/hugo.tmpl")
+	tmpl, err := templates.LoadHugoTemplate("templates/hugo.tmpl") // templates パッケージを使用
 	if err != nil {
 		fmt.Printf("テンプレート解析エラー: %v\n", err)
 		return
@@ -45,10 +47,7 @@ func main() {
 		fmt.Println("注意: --format-htmlオプションは--no-markdownと一緒に使用した場合のみ効果があります")
 	}
 
-	// コンバーターの生成
-	hugoConverter := hugo.NewConverter(fileSystem, htmlConverter, tmpl, *noMarkdown, *formatHTML)
-
-	// 変換の実行
+	// 変換の実行部分
 	filePath := args[0]
 	fmt.Printf("処理を開始します: %s\n", filePath)
 	if *noMarkdown {
@@ -67,12 +66,27 @@ func main() {
 		return
 	}
 
-	// 変換処理
+	// 進捗レポーターを初期化
+	progressReporter := reporter.NewProgressReporter(len(mtArticles))
+	progressReporter.Start("記事変換を開始")
+
+	// コンバーターの生成
+	hugoConverter := hugo.NewConverter(
+		fileSystem,
+		htmlConverter,
+		tmpl,
+		progressReporter, // レポーターを渡す
+		*noMarkdown,
+		*formatHTML,
+	)
+
+	// 変換処理を実行
 	if err := hugoConverter.ConvertEntries(mtArticles, *outputDir); err != nil {
-		fmt.Println("Hugoファイル作成エラー:", err)
-	} else {
-		elapsed := time.Since(start)
-		fmt.Printf("変換が完了しました（所要時間: %v）\n", elapsed)
+		fmt.Printf("変換エラー: %v\n", err)
+		return
 	}
 
+	// 処理完了表示はReportProgressの一部として処理される
+	elapsed := time.Since(start)
+	fmt.Printf("変換が完了しました（所要時間: %v）\n", elapsed)
 }
