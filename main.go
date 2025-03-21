@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"os"
 	"time"
 
 	// 外部パッケージをインポート
@@ -81,9 +82,28 @@ func main() {
 	)
 
 	// 変換処理を実行
-	if err := hugoConverter.ConvertEntries(mtArticles, *outputDir); err != nil {
-		fmt.Printf("変換エラー: %v\n", err)
-		return
+	err = hugoConverter.ConvertEntries(mtArticles, *outputDir)
+	if err != nil {
+		if report, ok := err.(*hugo.ConversionReport); ok {
+			// 詳細なレポート情報を使った処理
+			fmt.Printf("処理結果: %s\n", report.Error())
+			if len(report.ErrorDetails) > 0 {
+				fmt.Println("エラー詳細:")
+				for _, detail := range report.ErrorDetails {
+					fmt.Println(" - " + detail)
+				}
+			}
+		} else {
+			// 通常のエラー処理
+			fmt.Printf("エラー: %v\n", err)
+		}
+
+		// エラーが発生しても異常終了しない（レポートとして処理された場合）
+		if _, ok := err.(*hugo.ConversionReport); !ok {
+			os.Exit(1)
+		}
+	} else {
+		fmt.Println("変換が正常に完了しました")
 	}
 
 	// 処理完了表示はReportProgressの一部として処理される

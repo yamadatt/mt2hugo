@@ -193,3 +193,16 @@ type FileSystem interface {
 - slugをbasenameから受け取るが、その際日本語名だったら変換する。今はハッシュ値
 - ExtendedBodyもいれる。
 
+
+mt2hugo/
+├── converter/
+│   └── html/ (HTML→Markdown変換)
+├── models/ (データモデル定義)
+│   ├── movabletype.go (MT記事モデル)
+│   └── hugo.go (Hugo記事モデル)
+├── parser/ (入力ファイル解析)
+│   └── mtparser/ (MovableType解析)
+├── transformer/ (変換ロジック)
+│   └── transformer/ (MT→Hugo変換)
+└── generator/ (出力ロジック)
+    └── generator/ (ファイル生成)

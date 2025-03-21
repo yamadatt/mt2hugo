@@ -58,29 +58,71 @@ type HugoArticle struct {
 	ExtendedBody string
 }
 
+// ConversionReport は変換処理の結果を保持する構造体
+type ConversionReport struct {
+	TotalArticles    int      // 合計記事数
+	ProcessedCount   int      // 正常に処理された記事数
+	ValidationErrors int      // バリデーションエラー数
+	ProcessingErrors int      // 処理中エラー数
+	ErrorDetails     []string // エラー詳細情報
+}
+
+// Error はerrorインターフェースを実装
+func (r *ConversionReport) Error() string {
+	if r.ValidationErrors > 0 || r.ProcessingErrors > 0 {
+		return fmt.Sprintf("変換完了: 合計 %d 記事中 %d 記事が正常に処理されました "+
+			"(%d 記事がバリデーションエラー, %d 記事が処理中エラー)",
+			r.TotalArticles, r.ProcessedCount, r.ValidationErrors, r.ProcessingErrors)
+	}
+	return fmt.Sprintf("変換完了: 合計 %d 記事がすべて正常に処理されました", r.TotalArticles)
+}
+
+// HasErrors はエラーが発生したかどうかを返す
+func (r *ConversionReport) HasErrors() bool {
+	return r.ValidationErrors > 0 || r.ProcessingErrors > 0
+}
+
+// レポートヘルパー関数 - 警告メッセージの出力を統一
+func (h *HugoConverter) reportWarning(format string, args ...interface{}) {
+	if h.reporter != nil {
+		h.reporter.PrintWarning(format, args...)
+	} else {
+		fmt.Printf("\n警告: "+format+"\n", args...)
+	}
+}
+
 // ConvertEntries は既にパース済みの記事配列をHugo形式に変換する
 func (h *HugoConverter) ConvertEntries(articles []movabletype.Article, outputBaseDir string) error {
+	report := &ConversionReport{
+		TotalArticles: len(articles),
+		ErrorDetails:  make([]string, 0),
+	}
+
 	// 記事ごとに処理（進捗表示は外部から行う）
-	for _, article := range articles {
+	for i, article := range articles {
 		// 記事のバリデーション
 		if err := h.validator.ValidateArticle(article); err != nil {
-			if h.reporter != nil {
-				h.reporter.PrintWarning("記事バリデーションエラー: %v", err)
-			} else {
-				fmt.Printf("\n警告: 記事バリデーションエラー: %v\n", err)
-			}
+			errMsg := fmt.Sprintf("記事[%d] バリデーションエラー: %v", i+1, err)
+			h.reportWarning(errMsg)
+			report.ValidationErrors++
+			report.ErrorDetails = append(report.ErrorDetails, errMsg)
 			continue // バリデーションに失敗した記事はスキップ
 		}
 
 		// 記事の処理
 		if err := h.processArticle(article, outputBaseDir); err != nil {
-			if h.reporter != nil {
-				h.reporter.PrintWarning("記事処理エラー: %v", err)
-			} else {
-				fmt.Printf("\n警告: 記事処理エラー: %v\n", err)
-			}
-			// エラーが発生しても処理を続行
+			errMsg := fmt.Sprintf("記事[%d] 処理エラー: %v", i+1, err)
+			h.reportWarning(errMsg)
+			report.ProcessingErrors++
+			report.ErrorDetails = append(report.ErrorDetails, errMsg)
+		} else {
+			report.ProcessedCount++
 		}
+	}
+
+	// エラーが一つでもあればレポートを返す
+	if report.HasErrors() {
+		return report
 	}
 
 	return nil
@@ -95,71 +137,148 @@ func (h *HugoConverter) processArticle(article movabletype.Article, outputBaseDi
 	}
 
 	// 出力ディレクトリパスを生成
-	dirName := util.FormatDirName(t)
-	dirPath := filepath.Join(outputBaseDir, dirName)
-
-	// ディレクトリを作成
-	if err := h.fs.MkdirAll(dirPath); err != nil {
-		return fmt.Errorf("ディレクトリ作成エラー: %v", err)
+	dirPath, err := h.createOutputDirectory(outputBaseDir, t)
+	if err != nil {
+		return err
 	}
 
 	// Hugoデータの準備
-	hugoData := prepareHugoData(article, t)
+	hugoData, err := h.prepareArticleData(article, t)
+	if err != nil {
+		return err
+	}
+
+	// テンプレートを使って出力内容を生成し、ファイルに書き込み
+	return h.renderAndSaveArticle(hugoData, dirPath)
+}
+
+// 出力ディレクトリを作成するヘルパーメソッド
+func (h *HugoConverter) createOutputDirectory(baseDir string, date time.Time) (string, error) {
+	dirName := util.FormatDirName(date)
+	dirPath := filepath.Join(baseDir, dirName)
+
+	// ディレクトリを作成
+	if err := h.fs.MkdirAll(dirPath); err != nil {
+		return "", fmt.Errorf("ディレクトリ作成エラー: %v", err)
+	}
+
+	return dirPath, nil
+}
+
+// 記事データを準備するヘルパーメソッド
+func (h *HugoConverter) prepareArticleData(article movabletype.Article, t time.Time) (HugoArticle, error) {
+	// 基本データの準備
+	hugoData := createBaseHugoArticle(article, t)
+
+	// タグの処理
+	hugoData.Tags = parseTags(article.Keywords)
 
 	// 本文の処理
-	var processedBody string
-	if h.noMarkdown {
-		// HTMLをそのまま出力（整形オプションの有無で処理が変わる）
-		if h.formatHTML {
-			processedBody, err = h.converter.FormatHTMLWithIndentation(article.Body)
-			if err != nil {
-				return fmt.Errorf("HTMLのbeautifulえらー: %v", err)
-			}
-		} else {
-			processedBody = article.Body
-		}
-	} else {
-		// HTMLをMarkdownに変換
-		processedBody, err = h.converter.ConvertHTMLToMarkdown(article.Body)
-		if err != nil {
-			return fmt.Errorf("Markdown変換エラー: %v", err)
-		}
+	processedBody, err := h.processContent(article.Body)
+	if err != nil {
+		return HugoArticle{}, fmt.Errorf("本文処理エラー: %v", err)
 	}
-
-	// ExtendedBody の処理を追加
-	var processedExtendedBody string
-	if article.ExtendedBody != "" {
-		if h.noMarkdown {
-			// HTMLをそのまま出力（整形オプションの有無で処理が変わる）
-			if h.formatHTML {
-				processedExtendedBody, err = h.converter.FormatHTMLWithIndentation(article.ExtendedBody)
-				if err != nil {
-					return fmt.Errorf("HTMLのbeautifulえらー: %v", err)
-				}
-			} else {
-				processedExtendedBody = article.ExtendedBody
-			}
-		} else {
-			// HTMLをMarkdownに変換
-			processedExtendedBody, err = h.converter.ConvertHTMLToMarkdown(article.ExtendedBody)
-			if err != nil {
-				return fmt.Errorf("Markdown変換エラー: %v", err)
-			}
-		}
-	}
-
 	hugoData.Body = processedBody
-	hugoData.ExtendedBody = processedExtendedBody // 追加: 処理した拡張本文を設定
 
+	// 拡張本文の処理
+	if article.ExtendedBody != "" {
+		processedExtendedBody, err := h.processContent(article.ExtendedBody)
+		if err != nil {
+			return HugoArticle{}, fmt.Errorf("拡張本文処理エラー: %v", err)
+		}
+		hugoData.ExtendedBody = processedExtendedBody
+	}
+
+	return hugoData, nil
+}
+
+// 基本記事データを作成する
+func createBaseHugoArticle(article movabletype.Article, t time.Time) HugoArticle {
+	title := article.Title
+	if title == "" {
+		title = "無題"
+	}
+
+	// slugの決定
+	slug := determineSlug(article.Basename, title)
+
+	return HugoArticle{
+		Title:        strings.ReplaceAll(title, "\"", "\\\""),
+		Date:         t.Format("2006-01-02T15:04:05-07:00"),
+		Slug:         slug,
+		Category:     article.Category,
+		Image:        article.Image,
+		Summary:      strings.ReplaceAll(article.Excerpt, "\"", "\\\""),
+		ExtendedBody: "", // 初期値は空文字、後で設定
+	}
+}
+
+// スラグを決定する
+func determineSlug(basename, title string) string {
+	if basename != "" {
+		return basename
+	}
+	return util.CreateSlug(title)
+}
+
+// タグ文字列をパースする
+func parseTags(keywords string) []string {
+	if keywords == "" {
+		return nil
+	}
+
+	var tags []string
+	for _, tag := range strings.Split(keywords, ",") {
+		tags = append(tags, strings.TrimSpace(tag))
+	}
+	return tags
+}
+
+// テンプレートレンダリングとファイル保存
+func (h *HugoConverter) renderAndSaveArticle(hugoData HugoArticle, dirPath string) error {
 	// テンプレートを使って出力内容を生成
-	var output strings.Builder
-	if err := h.tmpl.Execute(&output, hugoData); err != nil {
-		return fmt.Errorf("テンプレート実行エラー: %v", err)
+	content, err := h.renderTemplate(hugoData)
+	if err != nil {
+		return err
 	}
 
 	// ファイルに書き込み
 	filePath := filepath.Join(dirPath, "index.md")
-	return h.fs.WriteFile(filePath, output.String())
+	return h.fs.WriteFile(filePath, content)
+}
+
+// テンプレートレンダリング
+func (h *HugoConverter) renderTemplate(data HugoArticle) (string, error) {
+	var output strings.Builder
+	if err := h.tmpl.Execute(&output, data); err != nil {
+		return "", fmt.Errorf("テンプレート実行エラー: %v", err)
+	}
+	return output.String(), nil
+}
+
+// 本文コンテンツを処理するヘルパーメソッド
+func (h *HugoConverter) processContent(content string) (string, error) {
+	// HTMLをそのまま出力する場合
+	if h.noMarkdown {
+		// 整形せずそのまま出力
+		if !h.formatHTML {
+			return content, nil
+		}
+
+		// HTML整形が必要な場合
+		processed, err := h.converter.FormatHTMLWithIndentation(content)
+		if err != nil {
+			return "", fmt.Errorf("HTMLの整形エラー: %v", err)
+		}
+		return processed, nil
+	}
+
+	// HTMLをMarkdownに変換する場合
+	processed, err := h.converter.ConvertHTMLToMarkdown(content)
+	if err != nil {
+		return "", fmt.Errorf("Markdown変換エラー: %v", err)
+	}
+	return processed, nil
 }
 
 // ProcessArticle は単一記事を処理する（公開メソッド版）
@@ -175,9 +294,10 @@ func prepareHugoData(article movabletype.Article, t time.Time) HugoArticle {
 	}
 
 	// slugの決定: BASENAMEがあれば使用し、なければタイトルからスラグを生成
-	// slug := article.Basename　//デバッグのために一旦無効化
 	slug := ""
-	if slug == "" {
+	if article.Basename != "" {
+		slug = article.Basename
+	} else {
 		slug = util.CreateSlug(title)
 	}
 
