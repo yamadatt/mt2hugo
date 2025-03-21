@@ -206,3 +206,35 @@ mt2hugo/
 │   └── transformer/ (MT→Hugo変換)
 └── generator/ (出力ロジック)
     └── generator/ (ファイル生成)
+
+
+modelsパッケージの整理:
+
+movabletype.go: MovableType記事モデルを定義
+hugo.go: Hugo記事モデルを定義
+transformerパッケージの作成:
+
+transformer/mt2hugo.go: MovableType記事からHugo記事への変換ロジック
+既存のhugo/converter.goからデータ変換部分を移植
+generatorパッケージの強化:
+
+既存のgenerator/filegenerator.goを使用
+必要に応じてインターフェースを追加
+main.goの更新:
+
+新しいパッケージ構成を利用するように更新
+責務分離の注意点
+この変更で重要なのは、以下のような明確な責任分担です：
+
+transformerの責務:
+
+MovableType記事データの検証
+本文のHTML→Markdown変換の処理
+メタデータの変換と最適化
+Hugo形式のデータ構造の生成
+generatorの責務:
+
+出力先ディレクトリの作成
+テンプレートの適用
+ファイル書き込み
+ファイル命名規則の管理

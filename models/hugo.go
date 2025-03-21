@@ -1,6 +1,6 @@
 package models
 
-// HugoArticle はHugo形式の記事データを表す構造体
+// HugoArticle はHugo形式の記事データモデル
 type HugoArticle struct {
 	Title        string
 	Date         string
