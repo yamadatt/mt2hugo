@@ -1,16 +1,17 @@
-package movabletype
+package mtparser
 
 import (
 	"fmt"
 	"os"
 	"strings"
 
+	"mt2hugo/models"
+
 	mt "github.com/yamadatt/movabletype"
 )
 
-// ParseFile はMovableTypeエクスポートファイルをパースして記事の配列を返します
-// 外部パッケージ yamadatt/movabletype を使用しています
-func ParseFile(filePath string) ([]Article, error) {
+// ParseFile はMovableTypeエクスポートファイルをパースして記事の配列を返す
+func ParseFile(filePath string) ([]models.MTArticle, error) {
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, fmt.Errorf("ファイルオープンエラー: %w", err)
@@ -23,8 +24,8 @@ func ParseFile(filePath string) ([]Article, error) {
 		return nil, fmt.Errorf("MovableType解析エラー: %w", err)
 	}
 
-	// 外部パッケージの型から内部の型に変換
-	articles := make([]Article, 0, len(entries))
+	// 外部パッケージの型から内部モデルに変換
+	articles := make([]models.MTArticle, 0, len(entries))
 	for _, entry := range entries {
 		// AllowCommentsの変換
 		var allowComments bool
@@ -44,7 +45,7 @@ func ParseFile(filePath string) ([]Article, error) {
 			categoryStr = strings.Join(entry.Category, ", ")
 		}
 
-		article := Article{
+		article := models.MTArticle{
 			Title:         entry.Title,
 			Date:          dateStr,
 			Body:          entry.Body,

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"mt2hugo/fs"
-	"mt2hugo/hugo"
+	"mt2hugo/models" // hugoパッケージからmodelsパッケージに変更
 	"mt2hugo/util"
 )
 
@@ -29,7 +29,8 @@ func NewFileGenerator(fileSystem fs.FileSystem, tmpl *template.Template, baseDir
 }
 
 // GenerateFile はHugo記事ファイルを生成する
-func (g *FileGenerator) GenerateFile(article hugo.HugoArticle, dateTime time.Time) (string, error) {
+func (g *FileGenerator) GenerateFile(article models.HugoArticle, dateTime time.Time) (string, error) {
+	// 以下、既存のコード
 	// 出力ディレクトリパスを生成
 	dirName := util.FormatDirName(dateTime)
 	dirPath := filepath.Join(g.baseDir, dirName)

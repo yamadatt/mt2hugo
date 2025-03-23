@@ -7,88 +7,68 @@ import (
 	"time"
 )
 
-// ProgressReporter は処理の進捗状況を表示するための構造体
+// Reporter はコマンドライン出力のインターフェース
+type Reporter interface {
+	// 警告メッセージを出力
+	PrintWarning(format string, args ...interface{})
+	// 進捗情報を開始
+	Start(message string)
+	// 進捗情報を更新
+	UpdateProgress(current int, message string)
+	// 進捗情報を完了
+	Finish(message string)
+}
+
+// ProgressReporter は進捗表示を行う構造体
 type ProgressReporter struct {
-	totalItems int
+	total      int
 	startTime  time.Time
+	lastUpdate time.Time
 	writer     io.Writer
 }
 
 // NewProgressReporter は新しいProgressReporterを作成する
-func NewProgressReporter(totalItems int) *ProgressReporter {
+func NewProgressReporter(total int) *ProgressReporter {
 	return &ProgressReporter{
-		totalItems: totalItems,
-		startTime:  time.Now(),
-		writer:     os.Stdout,
+		total:  total,
+		writer: os.Stdout,
 	}
 }
 
 // NewProgressReporterWithWriter は指定されたwriterを使用するProgressReporterを作成する
-func NewProgressReporterWithWriter(totalItems int, writer io.Writer) *ProgressReporter {
+func NewProgressReporterWithWriter(total int, writer io.Writer) *ProgressReporter {
 	return &ProgressReporter{
-		totalItems: totalItems,
-		startTime:  time.Now(),
-		writer:     writer,
+		total:  total,
+		writer: writer,
 	}
 }
 
-// ReportProgress は現在の進捗状況を表示する
-func (p *ProgressReporter) ReportProgress(currentItem int) {
-	if p.totalItems <= 0 {
+// Start は進捗表示を開始する
+func (r *ProgressReporter) Start(message string) {
+	r.startTime = time.Now()
+	r.lastUpdate = r.startTime
+	fmt.Fprintf(r.writer, "%s...\n", message)
+}
+
+// UpdateProgress は進捗状況を更新する
+func (r *ProgressReporter) UpdateProgress(current int, message string) {
+	now := time.Now()
+	// 更新の間隔を制限（例: 最低0.5秒間隔）
+	if now.Sub(r.lastUpdate) < 500*time.Millisecond && current < r.total {
 		return
 	}
+	r.lastUpdate = now
 
-	progressPercent := float64(currentItem) / float64(p.totalItems) * 100
-	elapsed := time.Since(p.startTime)
-
-	fmt.Fprintf(p.writer, "進捗: %.1f%% (%d/%d) - 経過時間: %v\r",
-		progressPercent, currentItem, p.totalItems, elapsed.Round(time.Second))
+	percent := float64(current) / float64(r.total) * 100
+	fmt.Fprintf(r.writer, "\r%s... %d/%d (%.1f%%)   ", message, current, r.total, percent)
 }
 
-// ReportProgressWithMessage は進捗状況と追加メッセージを表示する
-func (p *ProgressReporter) ReportProgressWithMessage(currentItem int, message string) {
-	if p.totalItems <= 0 {
-		return
-	}
-
-	progressPercent := float64(currentItem) / float64(p.totalItems) * 100
-	elapsed := time.Since(p.startTime)
-
-	fmt.Fprintf(p.writer, "進捗: %.1f%% (%d/%d) - 経過時間: %v - %s\r",
-		progressPercent, currentItem, p.totalItems, elapsed.Round(time.Second), message)
+// Finish は進捗表示を完了する
+func (r *ProgressReporter) Finish(message string) {
+	fmt.Fprintf(r.writer, "\n%s\n", message)
 }
 
-// Start は処理開始を記録し、初期メッセージを表示する
-func (p *ProgressReporter) Start(message string) {
-	p.startTime = time.Now()
-	fmt.Fprintf(p.writer, "%s - 処理対象: %d項目\n", message, p.totalItems)
-}
-
-// Finish は処理終了を報告し、統計情報を表示する
-func (p *ProgressReporter) Finish() time.Duration {
-	elapsed := time.Since(p.startTime)
-	fmt.Fprintf(p.writer, "\n処理完了 - 所要時間: %v\n", elapsed.Round(time.Second))
-	return elapsed
-}
-
-// PrintMessage は新しい行にメッセージを表示する
-func (p *ProgressReporter) PrintMessage(format string, args ...interface{}) {
-	fmt.Fprintf(p.writer, "\n"+format+"\n", args...)
-}
-
-// PrintWarning は警告メッセージを表示する
-func (p *ProgressReporter) PrintWarning(format string, args ...interface{}) {
-	fmt.Fprintf(p.writer, "\n警告: "+format+"\n", args...)
-}
-
-// Reporter はレポート機能を提供するインターフェース
-type Reporter interface {
-	// ReportProgress は現在の進捗状況を表示する
-	ReportProgress(currentItem int)
-
-	// PrintMessage はメッセージを表示する
-	PrintMessage(format string, args ...interface{})
-
-	// PrintWarning は警告メッセージを表示する
-	PrintWarning(format string, args ...interface{})
+// PrintWarning は警告メッセージを出力する
+func (r *ProgressReporter) PrintWarning(format string, args ...interface{}) {
+	fmt.Fprintf(r.writer, "\n警告: "+format+"\n", args...)
 }

@@ -2,9 +2,8 @@ package validator
 
 import (
 	"fmt"
+	"mt2hugo/models"
 	"testing"
-
-	"mt2hugo/movabletype"
 )
 
 // テスト用のモックレポーター
@@ -23,13 +22,13 @@ func TestValidateArticle(t *testing.T) {
 	// テストケース
 	testCases := []struct {
 		name          string
-		article       movabletype.Article
+		article       models.MTArticle
 		expectError   bool
 		expectWarning bool
 	}{
 		{
 			name: "有効な記事",
-			article: movabletype.Article{
+			article: models.MTArticle{
 				Title: "テスト記事",
 				Date:  "2023-01-01 12:00:00",
 			},
@@ -38,7 +37,7 @@ func TestValidateArticle(t *testing.T) {
 		},
 		{
 			name: "日付なし",
-			article: movabletype.Article{
+			article: models.MTArticle{
 				Title: "日付なし記事",
 			},
 			expectError:   true,
@@ -46,7 +45,7 @@ func TestValidateArticle(t *testing.T) {
 		},
 		{
 			name: "特殊文字を含むカテゴリ",
-			article: movabletype.Article{
+			article: models.MTArticle{
 				Title:    "特殊カテゴリ記事",
 				Date:     "2023-01-01 12:00:00",
 				Category: "特殊@カテゴリ",

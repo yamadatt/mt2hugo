@@ -126,55 +126,71 @@ Movable Typeエクスポートファイルは以下の要件を満たす必要�
 
 ```
 mt2hugo/
-  ├── main.go                # エントリーポイント
-  ├── fs/                    # ファイルシステム操作
-  │   ├── filesystem.go      # ファイル操作インターフェースと実装
-  │   └── filesystem_test.go # ファイルシステムのテスト
-  ├── converter/             # HTML→Markdown変換、HTML整形
-  │   ├── converter.go       # 変換インターフェースとメイン実装
-  │   ├── html_formatter.go  # HTML整形用ユーティリティ関数
-  │   ├── constants.go       # 定数定義
-  │   └── converter_test.go  # 変換機能のテスト
-  ├── movabletype/           # Movable Type関連
-  │   ├── models.go          # MT記事データ構造体定義
-  │   └── parser.go          # MTエクスポートファイル解析
-  ├── hugo/                  # Hugo関連
-  │   ├── models.go          # Hugo記事データ構造体定義
-  │   └── converter.go       # Hugo形式への変換処理
-  ├── util/                  # ユーティリティ
-  │   └── date.go            # 日付処理など
-  └── templates/             # テンプレート
-      └── hugo.tmpl          # Hugo記事のテンプレート
+  ├── main.go                  # エントリーポイント
+  ├── fs/                      # ファイルシステム操作
+  │   ├── filesystem.go        # ファイル操作インターフェースと実装
+  │   └── filesystem_test.go   # ファイルシステムのテスト
+  ├── converter/               # コンテンツ変換
+  │   ├── converter.go         # 変換インターフェースとメイン実装
+  │   ├── html_formatter.go    # HTML整形用ユーティリティ関数
+  │   ├── html_to_markdown.go  # HTMLからMarkdownへの変換
+  │   ├── constants.go         # 定数定義
+  │   └── converter_test.go    # 変換機能のテスト
+  ├── models/                  # データモデル定義
+  │   ├── movabletype.go       # Movable Type記事モデル
+  │   └── hugo.go              # Hugo記事モデル
+  ├── parser/                  # 入力ファイル解析
+  │   └── mtparser/            # Movable Type解析
+  │       ├── parser.go        # MTエクスポートファイル解析機能
+  │       └── parser_test.go   # パーサーのテスト
+  ├── transformer/             # 変換ロジック
+  │   ├── mt2hugo.go           # MT→Hugo変換ロジック
+  │   └── transformer_test.go  # 変換ロジックのテスト
+  ├── generator/               # 出力ロジック
+  │   ├── filegenerator.go     # ファイル生成機能
+  │   └── generator_test.go    # 生成機能のテスト
+  └── util/                    # ユーティリティ
+      ├── date.go              # 日付処理
+      └── slug.go              # スラグ生成
 ```
 
-## 技術的な詳細
+## 各パッケージの責務
 
-### ファイルシステム抽象化
+### models パッケージ
+- データモデルの定義
+- **movabletype.go**: Movable Type記事のデータ構造
+- **hugo.go**: Hugo記事のデータ構造
 
-`fs` パッケージでは、ファイルシステム操作を抽象化したインターフェースを提供しています。これにより、実際のファイルシステムとテスト用モックの両方で同じコードが使えるようになっています。
+### parser パッケージ
+- 入力ファイルの解析
+- **mtparser/parser.go**: Movable Typeエクスポートファイルを解析し、記事モデルに変換
 
-```go
-type FileSystem interface {
-    ReadFile(path string) ([]string, error)
-    WriteFile(path string, content string) error
-    MkdirAll(path string) error
-    // その他のメソッド
-}
-```
+### converter パッケージ
+- コンテンツ変換を担当
+- **html_to_markdown.go**: HTMLからMarkdownへの変換処理
+- **html_formatter.go**: HTML整形機能
 
-### HTML変換処理
+### transformer パッケージ
+- **mt2hugo.go**: Movable Type記事からHugo記事への変換ロジック
+- データの検証
+- メタデータの変換と最適化
+- 本文の処理（MarkdownへのHTML変換など）
 
-`converter` パッケージでは、以下の2つの主要機能を提供しています：
+### generator パッケージ
+- **filegenerator.go**: 出力ファイルの生成
+- 出力先ディレクトリの作成
+- テンプレートの適用
+- ファイル書き込み処理
+- ファイル命名規則の管理
 
-1. **HTMLからMarkdownへの変換**: JohannesKaufmann/html-to-markdown パッケージを使用
-2. **HTMLの整形**: yosssi/gohtml パッケージを使用し、以下の前処理と後処理を行っています：
-   - `<br>` タグの正規化
-   - 余分な空白や改行の削除
-   - 適切なインデント付与
+### util パッケージ
+- 共通ユーティリティ機能
+- **date.go**: 日付処理機能
+- **slug.go**: スラグ生成と変換
 
-### テスト
-
-各パッケージには対応するテストファイルがあり、`go test ./...` コマンドで全テストを実行できます。特に、`fs/filesystem_test.go` では、様々なエラーケースや境界条件もテストされています。
+### fs パッケージ
+- ファイルシステム操作の抽象化
+- 実際のファイルシステムとテストモックの両方に対応
 
 ## 注意事項
 
@@ -187,54 +203,10 @@ type FileSystem interface {
 
 - DeepL API Freeを使用し、記事タイトルからSlug用の英語テキストを生成する機能
 - より多くの日付フォーマットのサポート
-- 画像ファイルの自動抽出と整理機能
+- 画像ファイルの自動抽出と整理機能 
 - HTML整形オプションのカスタマイズ機能
 - テスト範囲のさらなる拡充
-- slugをbasenameから受け取るが、その際日本語名だったら変換する。今はハッシュ値
-- ExtendedBodyもいれる。
+- slugをbasenameから受け取り、日本語名の場合に適切に変換する機能
+- ExtendedBodyの対応拡充
 
 
-mt2hugo/
-├── converter/
-│   └── html/ (HTML→Markdown変換)
-├── models/ (データモデル定義)
-│   ├── movabletype.go (MT記事モデル)
-│   └── hugo.go (Hugo記事モデル)
-├── parser/ (入力ファイル解析)
-│   └── mtparser/ (MovableType解析)
-├── transformer/ (変換ロジック)
-│   └── transformer/ (MT→Hugo変換)
-└── generator/ (出力ロジック)
-    └── generator/ (ファイル生成)
-
-
-modelsパッケージの整理:
-
-movabletype.go: MovableType記事モデルを定義
-hugo.go: Hugo記事モデルを定義
-transformerパッケージの作成:
-
-transformer/mt2hugo.go: MovableType記事からHugo記事への変換ロジック
-既存のhugo/converter.goからデータ変換部分を移植
-generatorパッケージの強化:
-
-既存のgenerator/filegenerator.goを使用
-必要に応じてインターフェースを追加
-main.goの更新:
-
-新しいパッケージ構成を利用するように更新
-責務分離の注意点
-この変更で重要なのは、以下のような明確な責任分担です：
-
-transformerの責務:
-
-MovableType記事データの検証
-本文のHTML→Markdown変換の処理
-メタデータの変換と最適化
-Hugo形式のデータ構造の生成
-generatorの責務:
-
-出力先ディレクトリの作成
-テンプレートの適用
-ファイル書き込み
-ファイル命名規則の管理

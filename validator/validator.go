@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"regexp"
 
-	"mt2hugo/movabletype"
+	"mt2hugo/models"
 	"mt2hugo/reporter"
 )
 
-// ArticleValidator は記事のバリデーションを担当する
+// ArticleValidator は記事の検証を行う構造体
 type ArticleValidator struct {
 	reporter reporter.Reporter
 }
@@ -20,33 +20,17 @@ func NewArticleValidator(reporter reporter.Reporter) *ArticleValidator {
 	}
 }
 
-// ValidationRule はバリデーションルールのインターフェース
-type ValidationRule interface {
-	Validate(article movabletype.Article) error
-}
-
-// RequiredFieldRule は必須フィールドを検証するルール
-type RequiredFieldRule struct {
-	FieldName    string
-	FieldGetter  func(article movabletype.Article) string
-	ErrorMessage string
-}
-
-// ValidateArticle は記事が有効かどうか検証する
-func (v *ArticleValidator) ValidateArticle(article movabletype.Article) error {
-	// 日付の検証
-	if article.Date == "" {
-		title := "無題"
-		if article.Title != "" {
-			title = article.Title
-		}
-		return fmt.Errorf("DATEフィールドがありません (記事: %s)", title)
+// ValidateArticle は記事が有効かどうかを検証する
+func (v *ArticleValidator) ValidateArticle(article models.MTArticle) error {
+	// タイトルのチェック
+	if article.Title == "" {
+		return fmt.Errorf("タイトルが空です")
 	}
 
-	// カテゴリに特殊文字が含まれているか確認
-	v.validateCategory(article.Category)
-
-	// TODO: 他のバリデーションルールを追加
+	// 日付のチェック
+	if article.Date == "" {
+		return fmt.Errorf("日付が空です")
+	}
 
 	return nil
 }
@@ -61,7 +45,17 @@ func (v *ArticleValidator) validateCategory(category string) {
 	}
 }
 
-// 必要に応じてその他のバリデーションメソッドを追加
+// ValidationRule はバリデーションルールを表すインターフェース
+type ValidationRule interface {
+	Validate(article models.MTArticle) error
+}
+
+// RequiredFieldRule は必須フィールドのバリデーションルール
+type RequiredFieldRule struct {
+	FieldName    string
+	FieldGetter  func(article models.MTArticle) string
+	ErrorMessage string
+}
 
 // ArticleValidator の拡張版
 type EnhancedArticleValidator struct {
@@ -70,7 +64,7 @@ type EnhancedArticleValidator struct {
 }
 
 // NewRequiredFieldRule は新しいRequiredFieldRuleを作成する
-func NewRequiredFieldRule(fieldName string, getter func(article movabletype.Article) string) *RequiredFieldRule {
+func NewRequiredFieldRule(fieldName string, getter func(article models.MTArticle) string) *RequiredFieldRule {
 	return &RequiredFieldRule{
 		FieldName:    fieldName,
 		FieldGetter:  getter,
@@ -79,7 +73,7 @@ func NewRequiredFieldRule(fieldName string, getter func(article movabletype.Arti
 }
 
 // Validate は記事の必須フィールドを検証する
-func (r *RequiredFieldRule) Validate(article movabletype.Article) error {
+func (r *RequiredFieldRule) Validate(article models.MTArticle) error {
 	value := r.FieldGetter(article)
 	if value == "" {
 		return fmt.Errorf(r.ErrorMessage)
@@ -94,7 +88,7 @@ func NewEnhancedArticleValidator(reporter reporter.Reporter) *EnhancedArticleVal
 	}
 
 	// デフォルトルールを追加
-	validator.AddRule(NewRequiredFieldRule("DATE", func(a movabletype.Article) string {
+	validator.AddRule(NewRequiredFieldRule("DATE", func(a models.MTArticle) string {
 		return a.Date
 	}))
 
@@ -107,7 +101,7 @@ func (v *EnhancedArticleValidator) AddRule(rule ValidationRule) {
 }
 
 // ValidateArticle は記事が有効かどうか検証する
-func (v *EnhancedArticleValidator) ValidateArticle(article movabletype.Article) error {
+func (v *EnhancedArticleValidator) ValidateArticle(article models.MTArticle) error {
 	for _, rule := range v.rules {
 		if err := rule.Validate(article); err != nil {
 			return err
