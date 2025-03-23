@@ -39,7 +39,8 @@ func main() {
 	// テンプレートの読み込み
 	tmpl, err := templates.LoadHugoTemplate("templates/hugo.tmpl")
 	if err != nil {
-		fmt.Printf("テンプレート解析エラー: %v\n", err)
+		fmt.Printf("テンプレート読み込みエラー: %v\n", err)
+		fmt.Println("処理を中止します。")
 		return
 	}
 

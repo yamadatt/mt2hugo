@@ -115,11 +115,21 @@ func (t *Transformer) createBaseHugoArticle(article models.MTArticle, dateTime t
 	// slugの決定
 	slug := t.determineSlug(article.Basename, title)
 
+	// カテゴリを解析
+	categories := t.parseCategories(article.Category)
+
+	// 最初のカテゴリを単一カテゴリとして使用（互換性のため）
+	category := ""
+	if len(categories) > 0 {
+		category = categories[0]
+	}
+
 	return models.HugoArticle{
 		Title:        strings.ReplaceAll(title, "\"", "\\\""),
 		Date:         dateTime.Format("2006-01-02T15:04:05-07:00"),
 		Slug:         slug,
-		Category:     article.Category,
+		Category:     category,   // 従来の単一カテゴリ（互換性のため）
+		Categories:   categories, // 新しいカテゴリ配列
 		Image:        article.Image,
 		Summary:      strings.ReplaceAll(article.Excerpt, "\"", "\\\""),
 		ExtendedBody: "", // 初期値は空文字
@@ -145,4 +155,20 @@ func (t *Transformer) parseTags(keywords string) []string {
 		tags = append(tags, strings.TrimSpace(tag))
 	}
 	return tags
+}
+
+// parseCategories はカテゴリ文字列をパースする
+func (t *Transformer) parseCategories(categoryStr string) []string {
+	if categoryStr == "" {
+		return nil
+	}
+
+	var categories []string
+	for _, cat := range strings.Split(categoryStr, ",") {
+		trimmed := strings.TrimSpace(cat)
+		if trimmed != "" {
+			categories = append(categories, trimmed)
+		}
+	}
+	return categories
 }

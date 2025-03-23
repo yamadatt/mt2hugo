@@ -2,9 +2,10 @@
 title: "{{ .Title }}"
 date: {{ .Date }}
 slug: "{{ .Slug }}"
-{{ if .Category }}category:
-  - "{{ .Category }}"
-{{ end }}
+{{ if .Categories }}categories:
+{{ range .Categories }}  - "{{ . }}"
+{{ end }}{{ else if .Category }}categories:
+  - "{{ .Category }}"{{ end }}
 {{ if .Tags }}tags:
 {{ range .Tags }}  - "{{ . }}"
 {{ end }}{{ end }}
@@ -13,6 +14,8 @@ slug: "{{ .Slug }}"
     alt: "{{ .Title }}"
     hidden: true
     caption: "{{ .Title }}"
+{{ end }}
+{{ if .Image }}image: "{{ .Image }}"
 {{ end }}
 draft: false
 showtoc: false
