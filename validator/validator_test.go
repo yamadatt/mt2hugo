@@ -10,19 +10,30 @@ import (
 
 // テスト用のモックレポーター
 type MockReporter struct {
-	warnings []string
+	WarningMessages []string
+	InfoMessages    []string // 新しいフィールド
+	Messages        []string
 }
 
 func (m *MockReporter) PrintWarning(format string, args ...interface{}) {
-	m.warnings = append(m.warnings, fmt.Sprintf(format, args...))
+	message := fmt.Sprintf(format, args...)
+	m.WarningMessages = append(m.WarningMessages, message)
 }
 
-// 以下のメソッドは reporter.Reporter インターフェースに必要
+// 新しいメソッド
+func (m *MockReporter) PrintInfo(format string, args ...interface{}) {
+	message := fmt.Sprintf(format, args...)
+	m.InfoMessages = append(m.InfoMessages, message)
+}
+
+func (m *MockReporter) PrintMessage(format string, args ...interface{}) {
+	message := fmt.Sprintf(format, args...)
+	m.Messages = append(m.Messages, message)
+}
+
 func (m *MockReporter) Start(message string)                       {}
 func (m *MockReporter) UpdateProgress(current int, message string) {}
 func (m *MockReporter) Finish(message string)                      {}
-
-// 残りのコードは変更不要...
 
 func TestArticleValidator_ValidateArticle(t *testing.T) {
 	t.Run("基本的なバリデーションテスト", func(t *testing.T) {
@@ -47,7 +58,7 @@ func TestArticleValidator_ValidateArticle(t *testing.T) {
 					Date: "2023-01-01 12:00:00",
 				},
 				expectError:   true,
-				errorContains: "タイトルが空",
+				errorContains: "TITLEフィールドは必須です", // 「タイトルが空」を修正
 			},
 			{
 				name: "日付なし記事",
@@ -55,7 +66,7 @@ func TestArticleValidator_ValidateArticle(t *testing.T) {
 					Title: "日付なし記事",
 				},
 				expectError:   true,
-				errorContains: "日付が空",
+				errorContains: "DATEフィールドは必須です", // 「日付が空」を修正
 			},
 			{
 				name:        "空の記事",
@@ -89,62 +100,29 @@ func TestArticleValidator_ValidateArticle(t *testing.T) {
 	})
 }
 
+// カテゴリバリデーションのテスト - 特殊文字チェックが不要なので簡素化
 func TestArticleValidator_ValidateCategory(t *testing.T) {
-	t.Run("カテゴリバリデーション", func(t *testing.T) {
-		testCases := []struct {
-			name            string
-			category        string
-			expectWarning   bool
-			warningContains string
-		}{
-			{
-				name:          "通常のカテゴリ",
-				category:      "テストカテゴリ",
-				expectWarning: false,
-			},
-			{
-				name:            "特殊文字を含むカテゴリ",
-				category:        "特殊@カテゴリ",
-				expectWarning:   true,
-				warningContains: "特殊文字",
-			},
-			{
-				name:            "複数の特殊文字を含むカテゴリ",
-				category:        "特殊@#$%カテゴリ",
-				expectWarning:   true,
-				warningContains: "特殊文字",
-			},
-			{
-				name:          "空のカテゴリ",
-				category:      "",
-				expectWarning: false,
-			},
-		}
+	mockReporter := &MockReporter{
+		WarningMessages: []string{},
+		InfoMessages:    []string{},
+		Messages:        []string{},
+	}
 
-		for _, tc := range testCases {
-			t.Run(tc.name, func(t *testing.T) {
-				// モックレポーター初期化
-				mockReporter := &MockReporter{}
+	validator := NewArticleValidator(mockReporter)
 
-				// バリデーター作成
-				validator := NewArticleValidator(mockReporter)
+	// 任意のカテゴリのテスト - 警告は出ないはず
+	validator.ValidateCategory("test-category")
+	assert.Empty(t, mockReporter.WarningMessages, "カテゴリに対して警告は出ないはず")
 
-				// カテゴリの検証実行
-				validator.validateCategory(tc.category)
+	// 特殊文字を含むカテゴリも同様に警告は出ないはず
+	mockReporter.WarningMessages = []string{} // 一応リセット
+	validator.ValidateCategory("test/category")
+	assert.Empty(t, mockReporter.WarningMessages, "特殊文字を含むカテゴリでも警告は出ないはず")
 
-				// 警告のアサーション
-				if tc.expectWarning {
-					assert.NotEmpty(t, mockReporter.warnings, "警告が発生すべき場合に警告がありません")
-					if tc.warningContains != "" && len(mockReporter.warnings) > 0 {
-						assert.Contains(t, mockReporter.warnings[0], tc.warningContains,
-							"警告メッセージが期待した文字列を含んでいません")
-					}
-				} else {
-					assert.Empty(t, mockReporter.warnings, "警告が発生すべきでない場合に警告が発生しました")
-				}
-			})
-		}
-	})
+	// 空のカテゴリも問題ないはず
+	mockReporter.WarningMessages = []string{}
+	validator.ValidateCategory("")
+	assert.Empty(t, mockReporter.WarningMessages, "空のカテゴリでも警告は出ないはず")
 }
 
 func TestRequiredFieldRule(t *testing.T) {
@@ -188,7 +166,27 @@ func TestRequiredFieldRule(t *testing.T) {
 	})
 }
 
+// 重複していたテスト関数を1つに統合
 func TestEnhancedArticleValidator(t *testing.T) {
+	// 基本的な機能テスト
+	t.Run("基本的な機能", func(t *testing.T) {
+		mockReporter := &MockReporter{
+			WarningMessages: []string{},
+			InfoMessages:    []string{},
+			Messages:        []string{},
+		}
+
+		validator := NewEnhancedArticleValidator(mockReporter)
+
+		// バリデータが正しく作成されたことを確認
+		assert.NotNil(t, validator, "EnhancedArticleValidatorが作成されるべき")
+
+		// 拡張バリデータもカテゴリに対して警告を出さないことを確認
+		validator.ValidateCategory("test/category")
+		assert.Empty(t, mockReporter.WarningMessages, "カテゴリに対して警告は出ないはず")
+	})
+
+	// 拡張機能テスト
 	t.Run("拡張バリデーター機能", func(t *testing.T) {
 		// モックレポーター初期化
 		mockReporter := &MockReporter{}

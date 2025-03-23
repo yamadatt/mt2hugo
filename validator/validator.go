@@ -70,12 +70,6 @@ func (v *ArticleValidatorImpl) ValidateCategory(category string) {
 		return
 	}
 
-	// URL上で問題を起こす可能性のある文字のみをチェック
-	// 日本語などの言語文字は許可する
-	// problematicCharsRegex := regexp.MustCompile(`[^\p{L}\p{N}_\-\s]`)
-	// if problematicCharsRegex.MatchString(category) {
-	// 	v.reporter.PrintWarning("カテゴリ「%s」にURL上で問題となり得る特殊文字が含まれています。", category)
-	// }
 }
 
 // AddRule はバリデーションルールを追加する
@@ -110,3 +104,35 @@ func (r *RequiredFieldRule) Validate(article models.MTArticle) error {
 	}
 	return nil
 }
+
+// EnhancedArticleValidator は拡張されたバリデーション機能を提供する
+type EnhancedArticleValidator struct {
+	*ArticleValidatorImpl
+}
+
+// NewEnhancedArticleValidator は新しいEnhancedArticleValidatorを作成する
+func NewEnhancedArticleValidator(reporter reporter.Reporter) *EnhancedArticleValidator {
+	baseValidator := NewArticleValidator(reporter)
+	return &EnhancedArticleValidator{
+		ArticleValidatorImpl: baseValidator,
+	}
+}
+
+// AddCustomValidations はカスタムバリデーションを追加する
+func (v *EnhancedArticleValidator) AddCustomValidations() {
+	// 例: 特定の条件に基づくカスタムバリデーションルール
+	// v.AddRule(NewCustomRule())
+}
+
+// 必要に応じてカスタムルールを実装
+// CustomRule はカスタムバリデーションルール
+// type CustomRule struct{}
+//
+// func NewCustomRule() *CustomRule {
+//     return &CustomRule{}
+// }
+//
+// func (r *CustomRule) Validate(article models.MTArticle) error {
+//     // カスタムバリデーションロジック
+//     return nil
+// }

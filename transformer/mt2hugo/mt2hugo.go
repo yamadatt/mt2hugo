@@ -13,13 +13,26 @@ import (
 	"mt2hugo/validator"
 )
 
+// ErrorHandlingMode はエラー発生時の挙動モード
+type ErrorHandlingMode int
+
+const (
+	// ReturnHTML はエラー時に元のHTMLを返す
+	ReturnHTML ErrorHandlingMode = iota
+	// ReturnError はエラー時にエラーを返す（処理を中止する）
+	ReturnError
+	// ReturnPartial はエラー時に部分的な変換結果を返す
+	ReturnPartial
+)
+
 // Transformer は移行処理を行う変換器
 type Transformer struct {
-	htmlConverter converter.HTMLConverter // インターフェースを使用
-	reporter      reporter.Reporter
-	validator     validator.ArticleValidator
-	noMarkdown    bool
-	formatHTML    bool
+	htmlConverter     converter.HTMLConverter // インターフェースを使用
+	reporter          reporter.Reporter
+	validator         validator.ArticleValidator
+	noMarkdown        bool
+	formatHTML        bool
+	errorHandlingMode ErrorHandlingMode // 新しいフィールド
 }
 
 var _ transformer.ArticleTransformer = (*Transformer)(nil) // インターフェース実装チェック
@@ -31,14 +44,21 @@ func NewTransformer(
 	validator validator.ArticleValidator,
 	noMarkdown bool,
 	formatHTML bool,
+	errorMode ErrorHandlingMode, // 新しいパラメータ
 ) *Transformer {
 	return &Transformer{
-		htmlConverter: htmlConverter,
-		reporter:      reporter,
-		validator:     validator,
-		noMarkdown:    noMarkdown,
-		formatHTML:    formatHTML,
+		htmlConverter:     htmlConverter,
+		reporter:          reporter,
+		validator:         validator,
+		noMarkdown:        noMarkdown,
+		formatHTML:        formatHTML,
+		errorHandlingMode: errorMode,
 	}
+}
+
+// SetErrorHandlingMode はエラー処理モードを設定する
+func (t *Transformer) SetErrorHandlingMode(mode ErrorHandlingMode) {
+	t.errorHandlingMode = mode
 }
 
 // Transform はMovableType記事をHugo記事に変換する
@@ -87,21 +107,65 @@ func (t *Transformer) Transform(article interface{}) (models.HugoArticle, time.T
 
 // processContent はコンテンツを処理する（HTML→Markdown変換など）
 func (t *Transformer) processContent(content string) (string, error) {
+	// コンテンツが空の場合は早期リターン
+	if content == "" {
+		return "", nil
+	}
+
+	// Markdown変換が無効の場合
 	if t.noMarkdown {
 		if t.formatHTML {
-			return t.htmlConverter.FormatHTML(content), nil
+			formatted, err := t.htmlConverter.FormatHTMLWithIndentation(content)
+			if err != nil {
+				if t.reporter != nil {
+					t.reporter.PrintWarning("HTML整形エラー: %v", err)
+				}
+				// HTML整形に失敗した場合は元のHTMLを返す
+				return content, nil
+			}
+			return formatted, nil
 		}
 		return content, nil
 	}
 
 	// Markdown変換を試みる
 	converted, err := t.htmlConverter.ConvertHTMLToMarkdown(content)
+
+	// エラーが発生した場合、エラー処理モードに応じて対応
 	if err != nil {
 		if t.reporter != nil {
-			t.reporter.PrintWarning("Markdown変換エラー: %v、HTMLをそのまま出力します", err)
+			t.reporter.PrintWarning("Markdown変換エラー: %v", err)
 		}
-		return content, nil // エラーでも元のHTMLを返す
+
+		switch t.errorHandlingMode {
+		case ReturnHTML:
+			// 元のHTMLを返す（従来の挙動）
+			if t.reporter != nil {
+				t.reporter.PrintInfo("エラー処理モード: HTMLをそのまま出力します")
+			}
+			return content, nil
+
+		case ReturnError:
+			// エラーを呼び出し元に返す（処理中止）
+			if t.reporter != nil {
+				t.reporter.PrintInfo("エラー処理モード: 処理を中止します")
+			}
+			return "", fmt.Errorf("Markdown変換エラー: %w", err)
+
+		case ReturnPartial:
+			// 部分的な変換結果を返す
+			if t.reporter != nil {
+				t.reporter.PrintInfo("エラー処理モード: 部分的な変換結果を出力します")
+			}
+			return converted, nil
+
+		default:
+			// 未知のモードの場合はエラーを返す
+			return "", fmt.Errorf("不明なエラー処理モード: %v", t.errorHandlingMode)
+		}
 	}
+
+	// 変換成功の場合
 	return converted, nil
 }
 

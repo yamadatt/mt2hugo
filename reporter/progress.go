@@ -7,15 +7,24 @@ import (
 	"time"
 )
 
-// Reporter はコマンドライン出力のインターフェース
+// Reporter はレポート出力のためのインターフェース
 type Reporter interface {
-	// 警告メッセージを出力
+	// PrintMessage はメッセージを出力する
+	PrintMessage(format string, args ...interface{})
+
+	// PrintWarning は警告メッセージを出力する
 	PrintWarning(format string, args ...interface{})
-	// 進捗情報を開始
+
+	// PrintInfo は情報メッセージを出力する
+	PrintInfo(format string, args ...interface{})
+
+	// Start は処理の開始を通知する
 	Start(message string)
-	// 進捗情報を更新
+
+	// UpdateProgress は進捗を更新する
 	UpdateProgress(current int, message string)
-	// 進捗情報を完了
+
+	// Finish は処理の終了を通知する
 	Finish(message string)
 }
 
@@ -68,7 +77,32 @@ func (r *ProgressReporter) Finish(message string) {
 	fmt.Fprintf(r.writer, "\n%s\n", message)
 }
 
+// PrintMessage はメッセージを出力する
+func (r *ProgressReporter) PrintMessage(format string, args ...interface{}) {
+	fmt.Printf(format+"\n", args...)
+}
+
 // PrintWarning は警告メッセージを出力する
 func (r *ProgressReporter) PrintWarning(format string, args ...interface{}) {
-	fmt.Fprintf(r.writer, "\n警告: "+format+"\n", args...)
+	fmt.Printf("警告: "+format+"\n", args...)
+}
+
+// PrintInfo は情報メッセージを出力する
+func (r *ProgressReporter) PrintInfo(format string, args ...interface{}) {
+	fmt.Printf("情報: "+format+"\n", args...)
+}
+
+// ConsoleReporter はコンソールに出力するReporterの実装
+type ConsoleReporter struct {
+	// フィールド
+}
+
+// PrintInfo は情報メッセージを出力する
+func (r *ConsoleReporter) PrintInfo(format string, args ...interface{}) {
+	fmt.Printf("情報: "+format+"\n", args...)
+}
+
+// PrintMessage はメッセージを出力する
+func (r *ConsoleReporter) PrintMessage(format string, args ...interface{}) {
+	fmt.Printf(format+"\n", args...)
 }

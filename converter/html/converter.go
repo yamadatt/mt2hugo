@@ -4,6 +4,7 @@ import (
 	"mt2hugo/converter"
 
 	md "github.com/JohannesKaufmann/html-to-markdown"
+	"github.com/JohannesKaufmann/html-to-markdown/plugin"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/yosssi/gohtml"
 )
@@ -21,8 +22,8 @@ func NewHTMLToMarkdownConverter() *HTMLToMarkdownConverter {
 	// デフォルトコンバーターを作成
 	converter := md.NewConverter("", true, nil)
 
-	// デフォルトの変換ルールを使用
-	// 注: GithubFlavoredプラグインが見つからない場合は、カスタムルールで代替
+	// Github Flavored Markdownプラグインを追加
+	converter.Use(plugin.GitHubFlavored())
 
 	// カスタムルールを追加
 	converter.AddRules(
@@ -35,14 +36,6 @@ func NewHTMLToMarkdownConverter() *HTMLToMarkdownConverter {
 					return md.String(content)
 				}
 				return nil
-			},
-		},
-		// テーブル関連のカスタムルール
-		md.Rule{
-			Filter: []string{"table"},
-			Replacement: func(content string, selec *goquery.Selection, opt *md.Options) *string {
-				// テーブルのMarkdown変換ロジック
-				return nil // デフォルトの変換を使用
 			},
 		},
 	)

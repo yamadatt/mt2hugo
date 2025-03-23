@@ -22,6 +22,8 @@ func main() {
 	noMarkdown := flag.Bool("no-markdown", false, "HTMLをMarkdownに変換せず、そのまま出力します")
 	formatHTML := flag.Bool("format-html", false, "HTMLを階層構造でフォーマットして出力します(--no-markdownと共に使用)")
 	outputDir := flag.String("output", "output", "出力先ディレクトリを指定します")
+	// コマンドライン引数の追加
+	errorMode := flag.String("error-mode", "html", "Markdown変換エラー時の挙動: html(デフォルト), error, partial")
 	flag.Parse()
 
 	args := flag.Args()
@@ -47,6 +49,17 @@ func main() {
 	// formatHTMLは--no-markdownと一緒に使う場合のみ効果がある
 	if *formatHTML && !*noMarkdown {
 		fmt.Println("注意: --format-htmlオプションは--no-markdownと一緒に使用した場合のみ効果があります")
+	}
+
+	// エラーモードの設定
+	var mode mt2hugo.ErrorHandlingMode
+	switch *errorMode {
+	case "error":
+		mode = mt2hugo.ReturnError
+	case "partial":
+		mode = mt2hugo.ReturnPartial
+	default:
+		mode = mt2hugo.ReturnHTML
 	}
 
 	// 変換の実行部分
@@ -82,6 +95,7 @@ func main() {
 		articleValidator,
 		*noMarkdown,
 		*formatHTML,
+		mode,
 	)
 
 	// ファイル生成器の作成
