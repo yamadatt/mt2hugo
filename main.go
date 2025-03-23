@@ -6,7 +6,7 @@ import (
 	"text/template"
 	"time"
 
-	"mt2hugo/converter"
+	converterhtml "mt2hugo/converter/html"
 	"mt2hugo/fs"
 	"mt2hugo/generator"
 	"mt2hugo/models"
@@ -34,7 +34,7 @@ func main() {
 
 	// 初期化
 	fileSystem := fs.NewRealFileSystem()
-	htmlConverter := converter.NewHTMLToMarkdownConverter()
+	htmlConverter := converterhtml.NewHTMLToMarkdownConverter()
 
 	// テンプレートの読み込み
 	tmpl, err := templates.LoadHugoTemplate("templates/hugo.tmpl")
@@ -105,10 +105,24 @@ func main() {
 		// 変換処理
 		err := processArticle(article, transformer, fileGenerator)
 		if err != nil {
-			errMsg := fmt.Sprintf("記事[%d] 変換エラー: %v", i+1, err)
-			progressReporter.PrintWarning(errMsg)
-			validationErrors++
+			// エラーメッセージを作成し、詳細一覧に追加するだけで、ここでは表示しない
+			dateInfo := ""
+			if article.Date != "" {
+				dateInfo = fmt.Sprintf("DATE: %s, ", article.Date)
+			} else {
+				dateInfo = "DATE: 未設定, "
+			}
+
+			titleInfo := ""
+			if article.Title != "" {
+				titleInfo = fmt.Sprintf("Title: %s, ", article.Title)
+			} else {
+				titleInfo = "Title: 未設定, "
+			}
+
+			errMsg := fmt.Sprintf("記事[%d] 変換エラー: %s%s%v", i+1, dateInfo, titleInfo, err)
 			errorDetails = append(errorDetails, errMsg)
+			validationErrors++
 			continue
 		}
 
