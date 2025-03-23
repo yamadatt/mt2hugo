@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"mt2hugo/converter"
+	"mt2hugo/converter" // インターフェースをインポート
 	"mt2hugo/models"
 	"mt2hugo/reporter"
 	"mt2hugo/transformer"
@@ -13,11 +13,11 @@ import (
 	"mt2hugo/validator"
 )
 
-// Transformer はMT記事をHugo形式に変換する構造体
+// Transformer は移行処理を行う変換器
 type Transformer struct {
-	htmlConverter converter.HTMLConverter
-	validator     *validator.ArticleValidator
+	htmlConverter converter.HTMLConverter // インターフェースを使用
 	reporter      reporter.Reporter
+	validator     validator.ArticleValidator
 	noMarkdown    bool
 	formatHTML    bool
 }
@@ -26,16 +26,16 @@ var _ transformer.ArticleTransformer = (*Transformer)(nil) // インターフェ
 
 // NewTransformer は新しいTransformerを作成する
 func NewTransformer(
-	htmlConverter converter.HTMLConverter,
+	htmlConverter converter.HTMLConverter, // インターフェースを使用
 	reporter reporter.Reporter,
-	validator *validator.ArticleValidator,
+	validator validator.ArticleValidator,
 	noMarkdown bool,
 	formatHTML bool,
 ) *Transformer {
 	return &Transformer{
 		htmlConverter: htmlConverter,
-		validator:     validator,
 		reporter:      reporter,
+		validator:     validator,
 		noMarkdown:    noMarkdown,
 		formatHTML:    formatHTML,
 	}

@@ -6,7 +6,7 @@ import (
 	"text/template"
 	"time"
 
-	converterhtml "mt2hugo/converter/html"
+	"mt2hugo/converter/html" // インポートパスを更新
 	"mt2hugo/fs"
 	"mt2hugo/generator"
 	"mt2hugo/models"
@@ -34,7 +34,7 @@ func main() {
 
 	// 初期化
 	fileSystem := fs.NewRealFileSystem()
-	htmlConverter := converterhtml.NewHTMLToMarkdownConverter()
+	htmlConverter := html.NewHTMLToMarkdownConverter() // パッケージ名を修正
 
 	// テンプレートの読み込み
 	tmpl, err := templates.LoadHugoTemplate("templates/hugo.tmpl")

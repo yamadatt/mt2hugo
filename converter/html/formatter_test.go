@@ -30,6 +30,13 @@ func TestCleanupHTML(t *testing.T) {
 		assert.Equal(t, expected, result, "連続する改行が1つにまとめられていません")
 	})
 
+	t.Run("複合的なケース", func(t *testing.T) {
+		input := "テキスト1<br>\n   \n\n\nテキスト2<br/>テキスト3"
+		expected := "テキスト1<br />\nテキスト2<br />テキスト3"
+		result := cleanupHTML(input)
+		assert.Equal(t, expected, result, "複合的なケースで正しく処理されていません")
+	})
+
 	t.Run("空の入力", func(t *testing.T) {
 		result := cleanupHTML("")
 		assert.Empty(t, result, "空の入力に対して空の出力が返されていません")
@@ -49,6 +56,13 @@ func TestFormatConsecutiveEmptyLines(t *testing.T) {
 		expected := "テキスト1\n\nテキスト2"
 		result := formatConsecutiveEmptyLines(input)
 		assert.Equal(t, expected, result, "前後の空白や改行が削除されていません")
+	})
+
+	t.Run("すでに整形されている入力", func(t *testing.T) {
+		input := "テキスト1\n\nテキスト2"
+		expected := "テキスト1\n\nテキスト2"
+		result := formatConsecutiveEmptyLines(input)
+		assert.Equal(t, expected, result, "すでに整形されている入力が変更されています")
 	})
 
 	t.Run("空の入力", func(t *testing.T) {
@@ -101,6 +115,16 @@ func TestHTMLToMarkdownConverter_FormatHTMLWithIndentation(t *testing.T) {
 		assert.Contains(t, result, "<li>", "liタグが保持されていません")
 		assert.Contains(t, result, "項目1", "リスト項目が保持されていません")
 		assert.Contains(t, result, "項目2", "リスト項目が保持されていません")
+	})
+
+	t.Run("属性を持つタグのフォーマット", func(t *testing.T) {
+		input := `<div class="container"><p id="intro">テキスト</p></div>`
+		result, err := conv.FormatHTMLWithIndentation(input)
+		require.NoError(t, err, "フォーマット中にエラーが発生しました")
+
+		assert.Contains(t, result, `class="container"`, "クラス属性が保持されていません")
+		assert.Contains(t, result, `id="intro"`, "ID属性が保持されていません")
+		assert.Contains(t, result, "テキスト", "コンテンツが保持されていません")
 	})
 
 	t.Run("空の入力", func(t *testing.T) {

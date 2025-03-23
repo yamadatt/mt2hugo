@@ -2,65 +2,95 @@ package validator
 
 import (
 	"fmt"
-	"regexp"
 
 	"mt2hugo/models"
 	"mt2hugo/reporter"
 )
 
-// ArticleValidator は記事の検証を行う構造体
-type ArticleValidator struct {
+// ArticleValidator はMTArticleの検証を行うインターフェース
+type ArticleValidator interface {
+	// ValidateArticle は記事を検証し、エラーがあれば返す
+	ValidateArticle(article models.MTArticle) error
+
+	// ValidateCategory はカテゴリを検証する
+	ValidateCategory(category string)
+
+	// AddRule はバリデーションルールを追加する
+	AddRule(rule ValidationRule)
+}
+
+// ValidationRule は記事の検証ルールのインターフェース
+type ValidationRule interface {
+	// Validate は記事を検証し、エラーがあれば返す
+	Validate(article models.MTArticle) error
+}
+
+// ArticleValidatorImpl はMTArticleの検証を行う実装構造体
+type ArticleValidatorImpl struct {
 	reporter reporter.Reporter
+	rules    []ValidationRule
 }
 
-// NewArticleValidator は新しいArticleValidatorを作成する
-func NewArticleValidator(reporter reporter.Reporter) *ArticleValidator {
-	return &ArticleValidator{
+// NewArticleValidator は新しいArticleValidatorImplを作成する
+func NewArticleValidator(reporter reporter.Reporter) *ArticleValidatorImpl {
+	validator := &ArticleValidatorImpl{
 		reporter: reporter,
+		rules:    make([]ValidationRule, 0),
 	}
+
+	// デフォルトのバリデーションルールを追加
+	validator.AddRule(NewRequiredFieldRule("TITLE", func(a models.MTArticle) string {
+		return a.Title
+	}))
+	validator.AddRule(NewRequiredFieldRule("DATE", func(a models.MTArticle) string {
+		return a.Date
+	}))
+
+	return validator
 }
 
-// ValidateArticle は記事が有効かどうかを検証する
-func (v *ArticleValidator) ValidateArticle(article models.MTArticle) error {
-	// タイトルのチェック
-	if article.Title == "" {
-		return fmt.Errorf("タイトルが空です")
-	}
+// ValidateArticle は記事を検証し、エラーがあれば返す
+func (v *ArticleValidatorImpl) ValidateArticle(article models.MTArticle) error {
+	// カテゴリのバリデーション（警告のみ）
+	v.ValidateCategory(article.Category)
 
-	// 日付のチェック
-	if article.Date == "" {
-		return fmt.Errorf("日付が空です")
+	// すべてのルールを適用
+	for _, rule := range v.rules {
+		if err := rule.Validate(article); err != nil {
+			return err
+		}
 	}
 
 	return nil
 }
 
-// カテゴリのバリデーション
-func (v *ArticleValidator) validateCategory(category string) {
-	invalidCharsRegex := regexp.MustCompile(`[@#$%&*!?+=/\\:;"'` + "`" + `\(\)\[\]\{\}]`)
-	if invalidCharsRegex.MatchString(category) {
-		if v.reporter != nil {
-			v.reporter.PrintWarning("カテゴリ '%s' に特殊文字が含まれています。Hugo で問題が発生する可能性があります。", category)
-		}
+// ValidateCategory はカテゴリを検証する
+func (v *ArticleValidatorImpl) ValidateCategory(category string) {
+	if category == "" {
+		return
 	}
+
+	// URL上で問題を起こす可能性のある文字のみをチェック
+	// 日本語などの言語文字は許可する
+	// problematicCharsRegex := regexp.MustCompile(`[^\p{L}\p{N}_\-\s]`)
+	// if problematicCharsRegex.MatchString(category) {
+	// 	v.reporter.PrintWarning("カテゴリ「%s」にURL上で問題となり得る特殊文字が含まれています。", category)
+	// }
 }
 
-// ValidationRule はバリデーションルールを表すインターフェース
-type ValidationRule interface {
-	Validate(article models.MTArticle) error
+// AddRule はバリデーションルールを追加する
+func (v *ArticleValidatorImpl) AddRule(rule ValidationRule) {
+	v.rules = append(v.rules, rule)
 }
+
+// インターフェース実装の確認
+var _ ArticleValidator = (*ArticleValidatorImpl)(nil)
 
 // RequiredFieldRule は必須フィールドのバリデーションルール
 type RequiredFieldRule struct {
 	FieldName    string
 	FieldGetter  func(article models.MTArticle) string
 	ErrorMessage string
-}
-
-// ArticleValidator の拡張版
-type EnhancedArticleValidator struct {
-	rules    []ValidationRule
-	reporter reporter.Reporter
 }
 
 // NewRequiredFieldRule は新しいRequiredFieldRuleを作成する
@@ -77,35 +107,6 @@ func (r *RequiredFieldRule) Validate(article models.MTArticle) error {
 	value := r.FieldGetter(article)
 	if value == "" {
 		return fmt.Errorf(r.ErrorMessage)
-	}
-	return nil
-}
-
-// NewEnhancedArticleValidator は新しいEnhancedArticleValidatorを作成する
-func NewEnhancedArticleValidator(reporter reporter.Reporter) *EnhancedArticleValidator {
-	validator := &EnhancedArticleValidator{
-		reporter: reporter,
-	}
-
-	// デフォルトルールを追加
-	validator.AddRule(NewRequiredFieldRule("DATE", func(a models.MTArticle) string {
-		return a.Date
-	}))
-
-	return validator
-}
-
-// AddRule はバリデーションルールを追加する
-func (v *EnhancedArticleValidator) AddRule(rule ValidationRule) {
-	v.rules = append(v.rules, rule)
-}
-
-// ValidateArticle は記事が有効かどうか検証する
-func (v *EnhancedArticleValidator) ValidateArticle(article models.MTArticle) error {
-	for _, rule := range v.rules {
-		if err := rule.Validate(article); err != nil {
-			return err
-		}
 	}
 	return nil
 }

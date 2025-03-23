@@ -20,7 +20,6 @@ func TestHTMLToMarkdownConverter_ConvertHTMLToMarkdown(t *testing.T) {
 
 	t.Run("基本的なHTML変換", func(t *testing.T) {
 		html := "<h1>タイトル</h1><p>テキスト</p>"
-		// 末尾の改行を削除
 		expected := "# タイトル\n\nテキスト"
 
 		result, err := conv.ConvertHTMLToMarkdown(html)
@@ -35,6 +34,15 @@ func TestHTMLToMarkdownConverter_ConvertHTMLToMarkdown(t *testing.T) {
 		result, err := conv.ConvertHTMLToMarkdown(html)
 		require.NoError(t, err, "変換エラーが発生しました")
 		assert.Equal(t, expected, result, "リンクの変換結果が期待値と一致しません")
+	})
+
+	t.Run("キーワードクラス付きリンク", func(t *testing.T) {
+		html := "<a class=\"keyword\" href=\"https://example.com\">キーワード</a>"
+		expected := "キーワード"
+
+		result, err := conv.ConvertHTMLToMarkdown(html)
+		require.NoError(t, err, "変換エラーが発生しました")
+		assert.Equal(t, expected, result, "キーワードクラス付きリンクの変換結果が期待値と一致しません")
 	})
 
 	t.Run("空のHTML", func(t *testing.T) {

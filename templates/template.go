@@ -9,7 +9,7 @@ import (
 const DefaultHugoTemplate = `---
 title: "{{ .Title }}"
 date: {{ .Date }}
-slug: {{ .Slug }}
+slug: "{{ .Slug }}"
 {{ if .Category }}category:
   - "{{ .Category }}"
 {{ end }}
