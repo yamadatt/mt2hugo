@@ -4,19 +4,14 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"text/template"
 	"time"
 
-	"mt2hugo/converter/html"
-	"mt2hugo/fs"
 	"mt2hugo/generator"
 	"mt2hugo/internal/config"
+	"mt2hugo/internal/factory"
 	"mt2hugo/models"
-	"mt2hugo/parser/mtparser"
 	"mt2hugo/reporter"
-	"mt2hugo/templates"
 	"mt2hugo/transformer/mt2hugo"
-	"mt2hugo/validator"
 )
 
 func main() {
@@ -31,14 +26,14 @@ func main() {
 	// 設定の警告を表示
 	config.PrintFlagWarnings(cfg)
 
-	// 初期化
-	fileSystem := fs.NewRealFileSystem()
-	htmlConverter := html.NewHTMLToMarkdownConverter()
+	// 初期化（ファクトリーパターン使用）
+	fileSystem := factory.CreateFileSystem()
+	htmlConverter := factory.CreateHTMLConverter()
 
 	// テンプレートの読み込み
-	tmpl, err := templates.LoadHugoTemplate(cfg.TemplateFile)
+	tmpl, err := factory.LoadTemplate(cfg.TemplateFile)
 	if err != nil {
-		fmt.Printf("テンプレート読み込みエラー: %v\n", err)
+		fmt.Println(err)
 		fmt.Println("処理を中止します。")
 		return
 	}
@@ -55,34 +50,32 @@ func main() {
 	start := time.Now()
 
 	// MovableTypeのパース処理
-	mtArticles, err := mtparser.ParseFile(cfg.InputFile)
+	mtArticles, err := factory.LoadMTArticles(cfg.InputFile)
 	if err != nil {
-		fmt.Printf("Movable Typeファイル解析エラー: %v\n", err)
+		fmt.Println(err)
 		return
 	}
 
 	// 進捗レポーターを初期化
-	progressReporter := reporter.NewProgressReporter(len(mtArticles))
+	progressReporter := factory.CreateProgressReporter(len(mtArticles))
 	progressReporter.Start("記事変換を開始")
 
 	// 処理前のメモリ使用量
 	reportMemoryUsage(progressReporter, "処理開始時")
 
 	// バリデータの作成
-	articleValidator := validator.NewArticleValidator(progressReporter)
+	articleValidator := factory.CreateValidator(progressReporter)
 
 	// 変換器の作成
-	transformer := mt2hugo.NewTransformer(
+	transformer := factory.CreateTransformer(
+		cfg,
 		htmlConverter,
 		progressReporter,
 		articleValidator,
-		cfg.NoMarkdown,
-		cfg.FormatHTML,
-		cfg.ErrorMode,
 	)
 
 	// ファイル生成器の作成
-	fileGenerator := generator.NewFileGenerator(
+	fileGenerator := factory.CreateFileGenerator(
 		fileSystem,
 		tmpl,
 		cfg.OutputDir,
@@ -159,14 +152,6 @@ func processArticle(
 
 	_, err = generator.GenerateFile(hugoArticle, dateTime)
 	return err
-}
-
-// mustは、エラーがあればパニックを発生させる
-func must(tmpl *template.Template, err error) *template.Template {
-	if err != nil {
-		panic(err)
-	}
-	return tmpl
 }
 
 func reportMemoryUsage(reporter reporter.Reporter, stage string) {
