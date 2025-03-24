@@ -50,6 +50,14 @@ func main() {
 
 	start := time.Now()
 
+	// コンポーネントの初期化
+	components, err := factory.CreateComponents(cfg)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "初期化に失敗しました。処理を中止します。")
+		os.Exit(1)
+	}
+
 	// MovableTypeのパース処理
 	mtArticles, err := factory.LoadMTArticles(cfg.InputFile)
 	if err != nil {
@@ -58,21 +66,21 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 進捗レポーターを初期化
-	progressReporter := factory.CreateProgressReporter(len(mtArticles))
-	progressReporter.Start("記事変換を開始")
+	// 処理用コンポーネントのセットアップ - 設定も渡す
+	components.SetupProcessingComponents(len(mtArticles), cfg)
+	components.ProgressReporter.Start("記事変換を開始")
 
 	// 処理前のメモリ使用量
-	reportMemoryUsage(progressReporter, "処理開始時")
+	reportMemoryUsage(components.ProgressReporter, "処理開始時")
 
 	// バリデータの作成
-	articleValidator := factory.CreateValidator(progressReporter)
+	articleValidator := factory.CreateValidator(components.ProgressReporter)
 
 	// 変換器の作成
 	transformer := factory.CreateTransformer(
 		cfg,
 		htmlConverter,
-		progressReporter,
+		components.ProgressReporter,
 		articleValidator,
 	)
 
@@ -93,7 +101,7 @@ func main() {
 	// 記事ごとに処理
 	for i, article := range mtArticles {
 		// 進捗更新
-		progressReporter.UpdateProgress(i+1, fmt.Sprintf("記事 %d/%d を処理中", i+1, totalArticles))
+		components.ProgressReporter.UpdateProgress(i+1, fmt.Sprintf("記事 %d/%d を処理中", i+1, totalArticles))
 
 		// 変換処理
 		err := processArticle(article, transformer, fileGenerator)
@@ -119,11 +127,11 @@ func main() {
 	}
 
 	// 処理後のメモリ使用量
-	reportMemoryUsage(progressReporter, "処理終了後")
+	reportMemoryUsage(components.ProgressReporter, "処理終了後")
 
 	// 処理完了
 	elapsed := time.Since(start)
-	progressReporter.Finish(fmt.Sprintf("処理が完了しました。所要時間: %s", elapsed))
+	components.ProgressReporter.Finish(fmt.Sprintf("処理が完了しました。所要時間: %s", elapsed))
 
 	// 結果の出力
 	fmt.Printf("\n変換結果: 合計 %d 記事中 %d 記事が正常に処理されました "+
