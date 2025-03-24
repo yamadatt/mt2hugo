@@ -3,6 +3,7 @@ package validator
 import (
 	"fmt"
 
+	"mt2hugo/internal/errors"
 	"mt2hugo/models"
 	"mt2hugo/reporter"
 )
@@ -100,7 +101,7 @@ func NewRequiredFieldRule(fieldName string, getter func(article models.MTArticle
 func (r *RequiredFieldRule) Validate(article models.MTArticle) error {
 	value := r.FieldGetter(article)
 	if value == "" {
-		return fmt.Errorf(r.ErrorMessage)
+		return fmt.Errorf("%w: %s", errors.ErrValidation, r.ErrorMessage)
 	}
 	return nil
 }

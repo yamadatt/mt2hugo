@@ -6,13 +6,11 @@ import (
 	"runtime"
 	"time"
 
-	"mt2hugo/generator"
 	"mt2hugo/internal/config"
 	"mt2hugo/internal/errors"
 	"mt2hugo/internal/factory"
 	"mt2hugo/models"
 	"mt2hugo/reporter"
-	"mt2hugo/transformer/mt2hugo"
 )
 
 func main() {
@@ -26,18 +24,6 @@ func main() {
 
 	// 設定の警告を表示
 	config.PrintFlagWarnings(cfg)
-
-	// 初期化（ファクトリーパターン使用）
-	fileSystem := factory.CreateFileSystem()
-	htmlConverter := factory.CreateHTMLConverter()
-
-	// テンプレートの読み込み
-	tmpl, err := factory.LoadTemplate(cfg.TemplateFile)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		fmt.Fprintln(os.Stderr, "処理を中止します。")
-		os.Exit(1)
-	}
 
 	// 変換の実行部分
 	fmt.Printf("処理を開始します: %s\n", cfg.InputFile)
@@ -73,24 +59,6 @@ func main() {
 	// 処理前のメモリ使用量
 	reportMemoryUsage(components.ProgressReporter, "処理開始時")
 
-	// バリデータの作成
-	articleValidator := factory.CreateValidator(components.ProgressReporter)
-
-	// 変換器の作成
-	transformer := factory.CreateTransformer(
-		cfg,
-		htmlConverter,
-		components.ProgressReporter,
-		articleValidator,
-	)
-
-	// ファイル生成器の作成
-	fileGenerator := factory.CreateFileGenerator(
-		fileSystem,
-		tmpl,
-		cfg.OutputDir,
-	)
-
 	// 処理結果の追跡
 	var totalArticles = len(mtArticles)
 	var processedCount = 0
@@ -104,7 +72,7 @@ func main() {
 		components.ProgressReporter.UpdateProgress(i+1, fmt.Sprintf("記事 %d/%d を処理中", i+1, totalArticles))
 
 		// 変換処理
-		err := processArticle(article, transformer, fileGenerator)
+		err := processArticle(article, components)
 		if err != nil {
 			// エラータイプに基づいた処理
 			if errors.Is(err, errors.ErrValidation) {
@@ -112,11 +80,12 @@ func main() {
 				errMsg := fmt.Sprintf("記事[%d] 検証エラー: %s", i+1, err)
 				errorDetails = append(errorDetails, errMsg)
 			} else if errors.Is(err, errors.ErrTransform) {
-				processingErrors++
+				processingErrors++ // 変換エラーは処理中エラーとしてカウント
 				errMsg := fmt.Sprintf("記事[%d] 変換エラー: %s", i+1, err)
 				errorDetails = append(errorDetails, errMsg)
 			} else {
 				// その他のエラー
+				processingErrors++ // その他のエラーも処理中エラーとしてカウント
 				errMsg := fmt.Sprintf("記事[%d] エラー: %s", i+1, err)
 				errorDetails = append(errorDetails, errMsg)
 			}
@@ -148,15 +117,14 @@ func main() {
 
 func processArticle(
 	article models.MTArticle,
-	transformer *mt2hugo.Transformer,
-	generator *generator.FileGenerator,
+	components *factory.Components,
 ) error {
-	hugoArticle, dateTime, err := transformer.Transform(article)
+	hugoArticle, dateTime, err := components.Transformer.Transform(article)
 	if err != nil {
 		return err
 	}
 
-	_, err = generator.GenerateFile(hugoArticle, dateTime)
+	_, err = components.FileGenerator.GenerateFile(hugoArticle, dateTime)
 	return err
 }
 
