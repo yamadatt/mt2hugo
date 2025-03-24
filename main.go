@@ -1,15 +1,16 @@
 package main
 
 import (
-	"flag"
 	"fmt"
+	"os"
 	"runtime"
 	"text/template"
 	"time"
 
-	"mt2hugo/converter/html" // インポートパスを更新
+	"mt2hugo/converter/html"
 	"mt2hugo/fs"
 	"mt2hugo/generator"
+	"mt2hugo/internal/config"
 	"mt2hugo/models"
 	"mt2hugo/parser/mtparser"
 	"mt2hugo/reporter"
@@ -19,56 +20,34 @@ import (
 )
 
 func main() {
-	// コマンドラインオプション定義
-	noMarkdown := flag.Bool("no-markdown", false, "HTMLをMarkdownに変換せず、そのまま出力します")
-	formatHTML := flag.Bool("format-html", false, "HTMLを階層構造でフォーマットして出力します(--no-markdownと共に使用)")
-	outputDir := flag.String("output", "output", "出力先ディレクトリを指定します")
-	// コマンドライン引数の追加
-	errorMode := flag.String("error-mode", "html", "Markdown変換エラー時の挙動: html(デフォルト), error, partial")
-	flag.Parse()
-
-	args := flag.Args()
-	if len(args) < 1 {
-		fmt.Println("使い方: go run main.go [オプション] <Movable_Typeエクスポートファイルのパス>")
-		fmt.Println("オプション:")
-		flag.PrintDefaults()
-		return
+	// 設定の読み込み
+	cfg, err := config.ParseFlags()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, config.GetUsage())
+		os.Exit(1)
 	}
+
+	// 設定の警告を表示
+	config.PrintFlagWarnings(cfg)
 
 	// 初期化
 	fileSystem := fs.NewRealFileSystem()
-	htmlConverter := html.NewHTMLToMarkdownConverter() // パッケージ名を修正
+	htmlConverter := html.NewHTMLToMarkdownConverter()
 
 	// テンプレートの読み込み
-	tmpl, err := templates.LoadHugoTemplate("templates/hugo.tmpl")
+	tmpl, err := templates.LoadHugoTemplate(cfg.TemplateFile)
 	if err != nil {
 		fmt.Printf("テンプレート読み込みエラー: %v\n", err)
 		fmt.Println("処理を中止します。")
 		return
 	}
 
-	// formatHTMLは--no-markdownと一緒に使う場合のみ効果がある
-	if *formatHTML && !*noMarkdown {
-		fmt.Println("注意: --format-htmlオプションは--no-markdownと一緒に使用した場合のみ効果があります")
-	}
-
-	// エラーモードの設定
-	var mode mt2hugo.ErrorHandlingMode
-	switch *errorMode {
-	case "error":
-		mode = mt2hugo.ReturnError
-	case "partial":
-		mode = mt2hugo.ReturnPartial
-	default:
-		mode = mt2hugo.ReturnHTML
-	}
-
 	// 変換の実行部分
-	filePath := args[0]
-	fmt.Printf("処理を開始します: %s\n", filePath)
-	if *noMarkdown {
+	fmt.Printf("処理を開始します: %s\n", cfg.InputFile)
+	if cfg.NoMarkdown {
 		fmt.Println("Markdown変換を無効にしました。HTMLをそのまま出力します。")
-		if *formatHTML {
+		if cfg.FormatHTML {
 			fmt.Println("HTMLを階層構造でフォーマットします。")
 		}
 	}
@@ -76,12 +55,9 @@ func main() {
 	start := time.Now()
 
 	// MovableTypeのパース処理
-	mtArticles, err := mtparser.ParseFile(filePath)
+	mtArticles, err := mtparser.ParseFile(cfg.InputFile)
 	if err != nil {
 		fmt.Printf("Movable Typeファイル解析エラー: %v\n", err)
-		// ここでは単にログに出力しているため%wは不要ですが、
-		// 呼び出し元にエラーを返す場合は以下のようにします
-		// return fmt.Errorf("Movable Typeファイル解析エラー: %w", err)
 		return
 	}
 
@@ -100,16 +76,16 @@ func main() {
 		htmlConverter,
 		progressReporter,
 		articleValidator,
-		*noMarkdown,
-		*formatHTML,
-		mode,
+		cfg.NoMarkdown,
+		cfg.FormatHTML,
+		cfg.ErrorMode,
 	)
 
 	// ファイル生成器の作成
 	fileGenerator := generator.NewFileGenerator(
 		fileSystem,
 		tmpl,
-		*outputDir,
+		cfg.OutputDir,
 	)
 
 	// 処理結果の追跡
@@ -127,7 +103,7 @@ func main() {
 		// 変換処理
 		err := processArticle(article, transformer, fileGenerator)
 		if err != nil {
-			// エラーメッセージを作成し、詳細一覧に追加するだけで、ここでは表示しない
+			// エラーメッセージを作成
 			dateInfo := ""
 			if article.Date != "" {
 				dateInfo = fmt.Sprintf("DATE: %s, ", article.Date)
@@ -186,18 +162,17 @@ func processArticle(
 }
 
 // mustは、エラーがあればパニックを発生させる
-// templates.Mustの代わりに使用
 func must(tmpl *template.Template, err error) *template.Template {
 	if err != nil {
 		panic(err)
 	}
 	return tmpl
 }
+
 func reportMemoryUsage(reporter reporter.Reporter, stage string) {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
-	// 改行を追加して表示を見やすくする
 	reporter.PrintInfo("\n%s: メモリ使用量 - ヒープ=%dMB, 合計=%dMB, システム=%dMB",
 		stage,
 		m.HeapAlloc/1024/1024,
