@@ -8,6 +8,7 @@ import (
 
 	"mt2hugo/generator"
 	"mt2hugo/internal/config"
+	"mt2hugo/internal/errors"
 	"mt2hugo/internal/factory"
 	"mt2hugo/models"
 	"mt2hugo/reporter"
@@ -33,9 +34,9 @@ func main() {
 	// テンプレートの読み込み
 	tmpl, err := factory.LoadTemplate(cfg.TemplateFile)
 	if err != nil {
-		fmt.Println(err)
-		fmt.Println("処理を中止します。")
-		return
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "処理を中止します。")
+		os.Exit(1)
 	}
 
 	// 変換の実行部分
@@ -52,8 +53,9 @@ func main() {
 	// MovableTypeのパース処理
 	mtArticles, err := factory.LoadMTArticles(cfg.InputFile)
 	if err != nil {
-		fmt.Println(err)
-		return
+		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "処理を中止します。")
+		os.Exit(1)
 	}
 
 	// 進捗レポーターを初期化
@@ -96,24 +98,20 @@ func main() {
 		// 変換処理
 		err := processArticle(article, transformer, fileGenerator)
 		if err != nil {
-			// エラーメッセージを作成
-			dateInfo := ""
-			if article.Date != "" {
-				dateInfo = fmt.Sprintf("DATE: %s, ", article.Date)
+			// エラータイプに基づいた処理
+			if errors.Is(err, errors.ErrValidation) {
+				validationErrors++
+				errMsg := fmt.Sprintf("記事[%d] 検証エラー: %s", i+1, err)
+				errorDetails = append(errorDetails, errMsg)
+			} else if errors.Is(err, errors.ErrTransform) {
+				processingErrors++
+				errMsg := fmt.Sprintf("記事[%d] 変換エラー: %s", i+1, err)
+				errorDetails = append(errorDetails, errMsg)
 			} else {
-				dateInfo = "DATE: 未設定, "
+				// その他のエラー
+				errMsg := fmt.Sprintf("記事[%d] エラー: %s", i+1, err)
+				errorDetails = append(errorDetails, errMsg)
 			}
-
-			titleInfo := ""
-			if article.Title != "" {
-				titleInfo = fmt.Sprintf("Title: %s, ", article.Title)
-			} else {
-				titleInfo = "Title: 未設定, "
-			}
-
-			errMsg := fmt.Sprintf("記事[%d] 変換エラー: %s%s%v", i+1, dateInfo, titleInfo, err)
-			errorDetails = append(errorDetails, errMsg)
-			validationErrors++
 			continue
 		}
 
