@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"runtime"
 	"text/template"
 	"time"
 
@@ -78,12 +79,18 @@ func main() {
 	mtArticles, err := mtparser.ParseFile(filePath)
 	if err != nil {
 		fmt.Printf("Movable Typeファイル解析エラー: %v\n", err)
+		// ここでは単にログに出力しているため%wは不要ですが、
+		// 呼び出し元にエラーを返す場合は以下のようにします
+		// return fmt.Errorf("Movable Typeファイル解析エラー: %w", err)
 		return
 	}
 
 	// 進捗レポーターを初期化
 	progressReporter := reporter.NewProgressReporter(len(mtArticles))
 	progressReporter.Start("記事変換を開始")
+
+	// 処理前のメモリ使用量
+	reportMemoryUsage(progressReporter, "処理開始時")
 
 	// バリデータの作成
 	articleValidator := validator.NewArticleValidator(progressReporter)
@@ -144,6 +151,9 @@ func main() {
 		processedCount++
 	}
 
+	// 処理後のメモリ使用量
+	reportMemoryUsage(progressReporter, "処理終了後")
+
 	// 処理完了
 	elapsed := time.Since(start)
 	progressReporter.Finish(fmt.Sprintf("処理が完了しました。所要時間: %s", elapsed))
@@ -182,4 +192,15 @@ func must(tmpl *template.Template, err error) *template.Template {
 		panic(err)
 	}
 	return tmpl
+}
+func reportMemoryUsage(reporter reporter.Reporter, stage string) {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	// 改行を追加して表示を見やすくする
+	reporter.PrintInfo("\n%s: メモリ使用量 - ヒープ=%dMB, 合計=%dMB, システム=%dMB",
+		stage,
+		m.HeapAlloc/1024/1024,
+		m.TotalAlloc/1024/1024,
+		m.Sys/1024/1024)
 }

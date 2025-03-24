@@ -20,6 +20,7 @@ slug: "{{ .Slug }}"
 draft: false
 showtoc: false
 {{ if .Summary }}summary: "{{ .Summary }}"{{ end }}
+{{ if .Image }}bigimg: [{src: "{{ .Image }}"}]{{ end }}
 ---
 
 {{ .Body }}

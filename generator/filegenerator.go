@@ -37,19 +37,19 @@ func (g *FileGenerator) GenerateFile(article models.HugoArticle, dateTime time.T
 
 	// ディレクトリを作成
 	if err := g.fs.MkdirAll(dirPath); err != nil {
-		return "", fmt.Errorf("ディレクトリ作成エラー: %v", err)
+		return "", fmt.Errorf("ディレクトリ作成エラー: %w", err)
 	}
 
 	// テンプレートを使って出力内容を生成
 	var output strings.Builder
 	if err := g.tmpl.Execute(&output, article); err != nil {
-		return "", fmt.Errorf("テンプレート実行エラー: %v", err)
+		return "", fmt.Errorf("テンプレート実行エラー: %w", err)
 	}
 
 	// ファイルに書き込み
 	filePath := filepath.Join(dirPath, "index.md")
 	if err := g.fs.WriteFile(filePath, output.String()); err != nil {
-		return "", fmt.Errorf("ファイル書き込みエラー: %v", err)
+		return "", fmt.Errorf("ファイル書き込みエラー: %w", err)
 	}
 
 	return filePath, nil

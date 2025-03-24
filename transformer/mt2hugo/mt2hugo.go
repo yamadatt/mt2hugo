@@ -71,13 +71,13 @@ func (t *Transformer) Transform(article interface{}) (models.HugoArticle, time.T
 
 	// 記事のバリデーション
 	if err := t.validator.ValidateArticle(mtArticle); err != nil {
-		return models.HugoArticle{}, time.Time{}, fmt.Errorf("バリデーションエラー: %v", err)
+		return models.HugoArticle{}, time.Time{}, fmt.Errorf("バリデーションエラー: %w", err)
 	}
 
 	// 日付文字列をパース
 	dateTime, err := util.ParseArticleDate(mtArticle.Date)
 	if err != nil {
-		return models.HugoArticle{}, time.Time{}, fmt.Errorf("日付パースエラー '%s': %v", mtArticle.Date, err)
+		return models.HugoArticle{}, time.Time{}, fmt.Errorf("日付パースエラー '%s': %w", mtArticle.Date, err)
 	}
 
 	// 基本データの準備
@@ -89,7 +89,7 @@ func (t *Transformer) Transform(article interface{}) (models.HugoArticle, time.T
 	// 本文の処理
 	processedBody, err := t.processContent(mtArticle.Body)
 	if err != nil {
-		return models.HugoArticle{}, time.Time{}, fmt.Errorf("本文処理エラー: %v", err)
+		return models.HugoArticle{}, time.Time{}, fmt.Errorf("本文処理エラー: %w", err)
 	}
 	hugoArticle.Body = processedBody
 
@@ -97,7 +97,7 @@ func (t *Transformer) Transform(article interface{}) (models.HugoArticle, time.T
 	if mtArticle.ExtendedBody != "" {
 		processedExtendedBody, err := t.processContent(mtArticle.ExtendedBody)
 		if err != nil {
-			return models.HugoArticle{}, time.Time{}, fmt.Errorf("拡張本文処理エラー: %v", err)
+			return models.HugoArticle{}, time.Time{}, fmt.Errorf("拡張本文処理エラー: %w", err)
 		}
 		hugoArticle.ExtendedBody = processedExtendedBody
 	}
@@ -118,7 +118,7 @@ func (t *Transformer) processContent(content string) (string, error) {
 			formatted, err := t.htmlConverter.FormatHTMLWithIndentation(content)
 			if err != nil {
 				if t.reporter != nil {
-					t.reporter.PrintWarning("HTML整形エラー: %v", err)
+					t.reporter.PrintWarning("HTML整形エラー: %w", err)
 				}
 				// HTML整形に失敗した場合は元のHTMLを返す
 				return content, nil
@@ -134,34 +134,16 @@ func (t *Transformer) processContent(content string) (string, error) {
 	// エラーが発生した場合、エラー処理モードに応じて対応
 	if err != nil {
 		if t.reporter != nil {
-			t.reporter.PrintWarning("Markdown変換エラー: %v", err)
+			t.reporter.PrintWarning("Markdown変換エラー: %w", err)
 		}
 
 		switch t.errorHandlingMode {
-		case ReturnHTML:
-			// 元のHTMLを返す（従来の挙動）
-			if t.reporter != nil {
-				t.reporter.PrintInfo("エラー処理モード: HTMLをそのまま出力します")
-			}
-			return content, nil
-
 		case ReturnError:
 			// エラーを呼び出し元に返す（処理中止）
 			if t.reporter != nil {
 				t.reporter.PrintInfo("エラー処理モード: 処理を中止します")
 			}
 			return "", fmt.Errorf("Markdown変換エラー: %w", err)
-
-		case ReturnPartial:
-			// 部分的な変換結果を返す
-			if t.reporter != nil {
-				t.reporter.PrintInfo("エラー処理モード: 部分的な変換結果を出力します")
-			}
-			return converted, nil
-
-		default:
-			// 未知のモードの場合はエラーを返す
-			return "", fmt.Errorf("不明なエラー処理モード: %v", t.errorHandlingMode)
 		}
 	}
 
