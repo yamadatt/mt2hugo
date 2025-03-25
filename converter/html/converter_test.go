@@ -45,6 +45,24 @@ func TestHTMLToMarkdownConverter_ConvertHTMLToMarkdown(t *testing.T) {
 		assert.Equal(t, expected, result, "キーワードクラス付きリンクの変換結果が期待値と一致しません")
 	})
 
+	t.Run("はてなキーワードリンク", func(t *testing.T) {
+		html := `<a class="keyword" href="https://d.hatena.ne.jp/keyword/Amazon">Amazon</a>のサービス`
+		expected := `Amazonのサービス`
+
+		result, err := conv.ConvertHTMLToMarkdown(html)
+		require.NoError(t, err, "変換エラーが発生しました")
+		assert.Equal(t, expected, result, "はてなキーワードリンクの変換結果が期待値と一致しません")
+	})
+
+	t.Run("はてなキーワードURLリンク", func(t *testing.T) {
+		html := `<a href="https://d.hatena.ne.jp/keyword/Amazon">Amazon</a>のサービス`
+		expected := `Amazonのサービス`
+
+		result, err := conv.ConvertHTMLToMarkdown(html)
+		require.NoError(t, err, "変換エラーが発生しました")
+		assert.Equal(t, expected, result, "はてなキーワードURLリンクの変換結果が期待値と一致しません")
+	})
+
 	t.Run("空のHTML", func(t *testing.T) {
 		result, err := conv.ConvertHTMLToMarkdown("")
 		require.NoError(t, err, "空HTMLの変換でエラーが発生しました")
@@ -67,6 +85,9 @@ func TestHTMLToMarkdownConverter_ConvertHTMLToMarkdown(t *testing.T) {
 		html := `<img src="image.jpg" alt="代替テキスト">`
 		result, err := conv.ConvertHTMLToMarkdown(html)
 		require.NoError(t, err, "画像変換でエラーが発生しました")
-		assert.Contains(t, result, "![代替テキスト](image.jpg)", "画像変換が正しくありません")
+
+		// Hugoショートコード形式を期待
+		assert.Contains(t, result, "{{< figure src=\"image.jpg\"", "画像変換が正しくありません")
+		assert.Contains(t, result, "alt=\"代替テキスト\"", "画像のalt属性が正しくありません")
 	})
 }

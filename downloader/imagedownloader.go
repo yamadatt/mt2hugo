@@ -41,7 +41,6 @@ func NewImageDownloader(reporter reporter.Reporter, timeoutSec int, maxConcurren
 }
 
 // ProcessHTMLImages はHTML内の画像を検出してダウンロードし、パスを書き換えたHTMLを返す
-// ProcessHTMLImages はHTML内の画像を検出してダウンロードし、パスを書き換えたHTMLを返す
 func (d *ImageDownloader) ProcessHTMLImages(content string, outputDir string) (string, error) {
 	if content == "" {
 		return content, nil
@@ -82,11 +81,15 @@ func (d *ImageDownloader) ProcessHTMLImages(content string, outputDir string) (s
 		mdRe := regexp.MustCompile(`!\[([^\]]*)\]\(` + escapedURL + `\)`)
 		processedContent = mdRe.ReplaceAllString(processedContent, `![$1](`+newPath+`)`)
 
-		// 3. バックグラウンド画像（CSSスタイル内）
+		// 3. Hugoショートコード形式の画像URL（修正版）
+		hugoRe := regexp.MustCompile(`({{<\s*figure\s+src=)["']` + escapedURL + `["']`)
+		processedContent = hugoRe.ReplaceAllString(processedContent, `$1"`+newPath+`"`)
+
+		// 4. バックグラウンド画像（CSSスタイル内）
 		bgRe := regexp.MustCompile(`background(-image)?\s*:\s*url\(['"]*` + escapedURL + `['"]*\)`)
 		processedContent = bgRe.ReplaceAllString(processedContent, `background$1: url("`+newPath+`")`)
 
-		// 4. MovableType形式の画像フィールド
+		// 5. MovableType形式の画像フィールド
 		mtRe := regexp.MustCompile(`(?m)^IMAGE:\s*` + escapedURL + `\s*$`)
 		processedContent = mtRe.ReplaceAllString(processedContent, `IMAGE: `+newPath)
 	}
@@ -128,7 +131,22 @@ func (d *ImageDownloader) extractImageURLs(content string) []string {
 		}
 	}
 
-	// 3. MovableType形式の画像フィールドを検出
+	// 3. Hugoショートコード形式の画像URLを検出
+	hugoRe := regexp.MustCompile(`{{<\s*figure\s+src=["']?([^"'\s>]+)["']?[^>]*?>}}`)
+	hugoMatches := hugoRe.FindAllStringSubmatch(content, -1)
+
+	for _, match := range hugoMatches {
+		if len(match) >= 2 && match[1] != "" {
+			cleanURL := strings.TrimSpace(match[1])
+			urlMap[cleanURL] = true
+
+			if d.reporter != nil {
+				d.reporter.PrintInfo("Hugoショートコード画像URLを検出: %s", cleanURL)
+			}
+		}
+	}
+
+	// 4. MovableType形式の画像フィールドを検出（既存のコード）
 	mtImgRe := regexp.MustCompile(`(?m)^IMAGE:\s*(.+)$`)
 	mtMatches := mtImgRe.FindAllStringSubmatch(content, -1)
 
