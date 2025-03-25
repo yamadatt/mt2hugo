@@ -1,39 +1,13 @@
 package validator
 
 import (
-	"fmt"
 	"mt2hugo/models"
+	"mt2hugo/reporter" // reporter パッケージを追加
 	"testing"
 
+	// time パッケージを追加（ProcessResult 構造体で使用）
 	"github.com/stretchr/testify/assert"
 )
-
-// テスト用のモックレポーター
-type MockReporter struct {
-	WarningMessages []string
-	InfoMessages    []string // 新しいフィールド
-	Messages        []string
-}
-
-func (m *MockReporter) PrintWarning(format string, args ...interface{}) {
-	message := fmt.Sprintf(format, args...)
-	m.WarningMessages = append(m.WarningMessages, message)
-}
-
-// 新しいメソッド
-func (m *MockReporter) PrintInfo(format string, args ...interface{}) {
-	message := fmt.Sprintf(format, args...)
-	m.InfoMessages = append(m.InfoMessages, message)
-}
-
-func (m *MockReporter) PrintMessage(format string, args ...interface{}) {
-	message := fmt.Sprintf(format, args...)
-	m.Messages = append(m.Messages, message)
-}
-
-func (m *MockReporter) Start(message string)                       {}
-func (m *MockReporter) UpdateProgress(current int, message string) {}
-func (m *MockReporter) Finish(message string)                      {}
 
 func TestArticleValidator_ValidateArticle(t *testing.T) {
 	t.Run("基本的なバリデーションテスト", func(t *testing.T) {
@@ -77,13 +51,13 @@ func TestArticleValidator_ValidateArticle(t *testing.T) {
 
 		for _, tc := range testCases {
 			t.Run(tc.name, func(t *testing.T) {
-				// モックレポーター初期化
-				mockReporter := &MockReporter{}
+				// モックレポーター初期化（新しいimport pathを使用）
+				mockReporter := reporter.NewMockReporter()
 
 				// バリデーター作成
 				validator := NewArticleValidator(mockReporter)
 
-				// テスト実行
+				// テスト実行と検証（変更なし）
 				err := validator.ValidateArticle(tc.article)
 
 				// アサーション
@@ -102,11 +76,7 @@ func TestArticleValidator_ValidateArticle(t *testing.T) {
 
 // カテゴリバリデーションのテスト - 特殊文字チェックが不要なので簡素化
 func TestArticleValidator_ValidateCategory(t *testing.T) {
-	mockReporter := &MockReporter{
-		WarningMessages: []string{},
-		InfoMessages:    []string{},
-		Messages:        []string{},
-	}
+	mockReporter := reporter.NewMockReporter()
 
 	validator := NewArticleValidator(mockReporter)
 
@@ -170,11 +140,7 @@ func TestRequiredFieldRule(t *testing.T) {
 func TestEnhancedArticleValidator(t *testing.T) {
 	// 基本的な機能テスト
 	t.Run("基本的な機能", func(t *testing.T) {
-		mockReporter := &MockReporter{
-			WarningMessages: []string{},
-			InfoMessages:    []string{},
-			Messages:        []string{},
-		}
+		mockReporter := reporter.NewMockReporter()
 
 		validator := NewEnhancedArticleValidator(mockReporter)
 
@@ -189,7 +155,7 @@ func TestEnhancedArticleValidator(t *testing.T) {
 	// 拡張機能テスト
 	t.Run("拡張バリデーター機能", func(t *testing.T) {
 		// モックレポーター初期化
-		mockReporter := &MockReporter{}
+		mockReporter := reporter.NewMockReporter()
 
 		// 拡張バリデーター作成
 		enhancedValidator := NewEnhancedArticleValidator(mockReporter)
