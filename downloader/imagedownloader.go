@@ -220,17 +220,19 @@ func (d *ImageDownloader) downloadImage(imgURL string, outputDir string) (string
 		d.reporter.PrintInfo("ファイル名生成: %s", fileName)
 	}
 
-	// ファイル名の衝突を避ける
-	origFileName := fileName
-	if _, err := os.Stat(filepath.Join(outputDir, fileName)); err == nil {
-		ext := filepath.Ext(fileName)
-		baseName := strings.TrimSuffix(fileName, ext)
-		fileName = fmt.Sprintf("%s_%d%s", baseName, time.Now().UnixNano(), ext)
-		d.reporter.PrintInfo("ファイル名衝突回避: %s -> %s", origFileName, fileName)
-	}
-
 	// 保存先パス
 	destPath := filepath.Join(outputDir, fileName)
+
+	// ファイルが既に存在するか確認
+	if _, err := os.Stat(destPath); err == nil {
+		// ファイルが既に存在する場合
+		fileInfo, err := os.Stat(destPath)
+		if err == nil && fileInfo.Size() > 0 {
+			d.reporter.PrintInfo("ファイルが既に存在するためスキップ: %s", destPath)
+			return fileName, nil // ダウンロードせずに既存のファイル名を返す
+		}
+	}
+
 	d.reporter.PrintInfo("ダウンロード開始: %s -> %s", imgURL, destPath)
 
 	// imroc/reqを使用してダウンロード - エラーハンドリング強化
