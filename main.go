@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"os"
-	"runtime"
 	"time"
 
 	"mt2hugo/internal/config"
@@ -17,10 +16,13 @@ func main() {
 	// 設定の読み込み
 	cfg, err := config.ParseFlags()
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		wrappedErr := errors.Wrap(err, errors.ErrConfiguration, "設定の解析に失敗しました")
+		fmt.Fprintln(os.Stderr, wrappedErr)
 		fmt.Fprintln(os.Stderr, config.GetUsage())
 		os.Exit(1)
 	}
+
+	// fmt.Printf("デバッグ: NoMarkdown=%v\n", cfg.NoMarkdown)
 
 	// 設定の警告を表示
 	config.PrintFlagWarnings(cfg)
@@ -39,9 +41,13 @@ func main() {
 	// コンポーネントの初期化
 	components, err := factory.CreateComponents(cfg)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, err)
-		fmt.Fprintln(os.Stderr, "初期化に失敗しました。処理を中止します。")
-		os.Exit(1)
+		if errors.Is(err, errors.ErrConfiguration) {
+			fmt.Fprintln(os.Stderr, "設定エラー:", err)
+			os.Exit(2)
+		} else {
+			fmt.Fprintln(os.Stderr, "初期化に失敗しました:", err)
+			os.Exit(1)
+		}
 	}
 
 	// MovableTypeのパース処理
@@ -52,67 +58,48 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 処理用コンポーネントのセットアップ - 設定も渡す
+	// 処理用コンポーネントのセットアップ
 	components.SetupProcessingComponents(len(mtArticles), cfg)
 	components.ProgressReporter.Start("記事変換を開始")
 
 	// 処理前のメモリ使用量
-	reportMemoryUsage(components.ProgressReporter, "処理開始時")
+	reporter.ReportMemoryUsage(components.ProgressReporter, "処理開始時")
 
 	// 処理結果の追跡
-	var totalArticles = len(mtArticles)
-	var processedCount = 0
-	var validationErrors = 0
-	var processingErrors = 0
-	var errorDetails = make([]string, 0)
+	result := reporter.NewProcessResult(len(mtArticles))
 
 	// 記事ごとに処理
 	for i, article := range mtArticles {
 		// 進捗更新
-		components.ProgressReporter.UpdateProgress(i+1, fmt.Sprintf("記事 %d/%d を処理中", i+1, totalArticles))
+		components.ProgressReporter.UpdateProgress(i+1, fmt.Sprintf("記事 %d/%d を処理中", i+1, result.TotalArticles))
 
 		// 変換処理
 		err := processArticle(article, components)
 		if err != nil {
 			// エラータイプに基づいた処理
 			if errors.Is(err, errors.ErrValidation) {
-				validationErrors++
-				errMsg := fmt.Sprintf("記事[%d] 検証エラー: %s", i+1, err)
-				errorDetails = append(errorDetails, errMsg)
+				result.AddValidationError(i+1, err)
 			} else if errors.Is(err, errors.ErrTransform) {
-				processingErrors++ // 変換エラーは処理中エラーとしてカウント
-				errMsg := fmt.Sprintf("記事[%d] 変換エラー: %s", i+1, err)
-				errorDetails = append(errorDetails, errMsg)
+				result.AddTransformError(i+1, err)
 			} else {
 				// その他のエラー
-				processingErrors++ // その他のエラーも処理中エラーとしてカウント
-				errMsg := fmt.Sprintf("記事[%d] エラー: %s", i+1, err)
-				errorDetails = append(errorDetails, errMsg)
+				result.AddOtherError(i+1, err)
 			}
 			continue
 		}
 
-		processedCount++
+		result.IncrementProcessed()
 	}
 
 	// 処理後のメモリ使用量
-	reportMemoryUsage(components.ProgressReporter, "処理終了後")
+	reporter.ReportMemoryUsage(components.ProgressReporter, "処理終了後")
 
 	// 処理完了
 	elapsed := time.Since(start)
 	components.ProgressReporter.Finish(fmt.Sprintf("処理が完了しました。所要時間: %s", elapsed))
 
 	// 結果の出力
-	fmt.Printf("\n変換結果: 合計 %d 記事中 %d 記事が正常に処理されました "+
-		"(%d 記事がバリデーションエラー, %d 記事が処理中エラー)\n",
-		totalArticles, processedCount, validationErrors, processingErrors)
-
-	if len(errorDetails) > 0 {
-		fmt.Println("\n以下のエラーが発生しました:")
-		for _, err := range errorDetails {
-			fmt.Printf("- %s\n", err)
-		}
-	}
+	reporter.ReportProcessResult(components.ProgressReporter, result)
 }
 
 func processArticle(
@@ -121,20 +108,13 @@ func processArticle(
 ) error {
 	hugoArticle, dateTime, err := components.Transformer.Transform(article)
 	if err != nil {
-		return err
+		// すでにラップされている可能性があるのでWrapIfNotTypedを使用
+		return errors.WrapIfNotTyped(err, errors.ErrProcessing, "記事の変換に失敗しました")
 	}
 
 	_, err = components.FileGenerator.GenerateFile(hugoArticle, dateTime)
-	return err
-}
-
-func reportMemoryUsage(reporter reporter.Reporter, stage string) {
-	var m runtime.MemStats
-	runtime.ReadMemStats(&m)
-
-	reporter.PrintInfo("\n%s: メモリ使用量 - ヒープ=%dMB, 合計=%dMB, システム=%dMB",
-		stage,
-		m.HeapAlloc/1024/1024,
-		m.TotalAlloc/1024/1024,
-		m.Sys/1024/1024)
+	if err != nil {
+		return errors.WrapIfNotTyped(err, errors.ErrFileSystem, "ファイル生成に失敗しました")
+	}
+	return nil
 }

@@ -37,6 +37,25 @@ func WrapIf(err error, condition bool, baseErr error, message string) error {
 	return err
 }
 
+// より汎用的なアプローチ
+func WrapIfNotTyped(err error, baseErr error, message string) error {
+	// 基本エラータイプの一覧
+	baseErrors := []error{
+		ErrValidation, ErrConfiguration, ErrParsing,
+		ErrTransform, ErrFileSystem, ErrProcessing,
+	}
+
+	// 既に基本エラータイプのいずれかでラップされているかチェック
+	for _, e := range baseErrors {
+		if Is(err, e) {
+			return err
+		}
+	}
+
+	// ラップされていない場合は新しくラップする
+	return Wrap(err, baseErr, message)
+}
+
 // New は新しいエラーを作成する
 func New(message string) error {
 	return errors.New(message)

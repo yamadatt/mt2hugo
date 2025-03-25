@@ -26,6 +26,9 @@ type Reporter interface {
 
 	// Finish は処理の終了を通知する
 	Finish(message string)
+
+	// DisplayResult はProcessResultを表示する
+	DisplayResult(result *ProcessResult)
 }
 
 // ProgressReporter は進捗表示を行う構造体
@@ -92,6 +95,11 @@ func (r *ProgressReporter) PrintInfo(format string, args ...interface{}) {
 	fmt.Printf("情報: "+format+"\n", args...)
 }
 
+// DisplayResult はProcessResultを表示する
+func (r *ProgressReporter) DisplayResult(result *ProcessResult) {
+	DisplayResults(result) // 既存の関数を呼び出す
+}
+
 // ConsoleReporter はコンソールに出力するReporterの実装
 type ConsoleReporter struct {
 	// フィールド
@@ -105,4 +113,9 @@ func (r *ConsoleReporter) PrintInfo(format string, args ...interface{}) {
 // PrintMessage はメッセージを出力する
 func (r *ConsoleReporter) PrintMessage(format string, args ...interface{}) {
 	fmt.Printf(format+"\n", args...)
+}
+
+// DisplayResult はProcessResultを表示する
+func (r *ConsoleReporter) DisplayResult(result *ProcessResult) {
+	DisplayResults(result) // 既存の関数を呼び出す
 }
