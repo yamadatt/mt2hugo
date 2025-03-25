@@ -37,8 +37,8 @@ func NewFileGenerator(
 }
 
 // GenerateFile はHugo記事ファイルを生成する
+// GenerateFile はHugo記事ファイルを生成する
 func (g *FileGenerator) GenerateFile(article models.HugoArticle, dateTime time.Time) (string, error) {
-	// 以下、既存のコード
 	// 出力ディレクトリパスを生成
 	dirName := util.FormatDirName(dateTime)
 	dirPath := filepath.Join(g.baseDir, dirName)
@@ -48,14 +48,15 @@ func (g *FileGenerator) GenerateFile(article models.HugoArticle, dateTime time.T
 		return "", fmt.Errorf("ディレクトリ作成エラー: %w", err)
 	}
 
-	// 追加: 画像ダウンロード処理
+	// 記事処理のコピーを作成
 	processedArticle := article
+
+	// 画像ダウンロード処理
 	if g.imageDownloader != nil {
-		// 本文の画像処理
+		// 本文内の画像処理
 		if article.Body != "" {
 			processedBody, err := g.imageDownloader.ProcessHTMLImages(article.Body, dirPath)
 			if err != nil {
-				// エラーは記録するが処理は続行
 				fmt.Printf("警告: 本文の画像ダウンロード中にエラー: %v\n", err)
 			} else {
 				processedArticle.Body = processedBody
@@ -69,6 +70,19 @@ func (g *FileGenerator) GenerateFile(article models.HugoArticle, dateTime time.T
 				fmt.Printf("警告: 拡張本文の画像ダウンロード中にエラー: %v\n", err)
 			} else {
 				processedArticle.ExtendedBody = processedExtBody
+			}
+		}
+
+		// IMAGE フィールドの画像処理
+		if article.Image != "" {
+			// IMAGE フィールドの URL を処理
+			tempContent := fmt.Sprintf("IMAGE: %s", article.Image)
+			processedContent, err := g.imageDownloader.ProcessHTMLImages(tempContent, dirPath)
+			if err != nil {
+				fmt.Printf("警告: IMAGE フィールドの画像ダウンロード中にエラー: %v\n", err)
+			} else {
+				// "IMAGE: " を除去して実際のファイル名だけを取得
+				processedArticle.Image = strings.TrimPrefix(processedContent, "IMAGE: ")
 			}
 		}
 	}

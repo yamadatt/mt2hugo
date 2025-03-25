@@ -107,6 +107,15 @@ func (t *Transformer) Transform(article interface{}) (models.HugoArticle, time.T
 		hugoArticle.ExtendedBody = processedExtendedBody
 	}
 
+	// IMAGEフィールドの処理
+	if mtArticle.Image != "" && t.downloadImages && t.imageDownloader != nil {
+		// 画像のダウンロードはまだ行わない（出力ディレクトリが決定していないため）
+		// ここではImageフィールドをそのまま設定
+		hugoArticle.Image = mtArticle.Image
+	} else {
+		hugoArticle.Image = mtArticle.Image
+	}
+
 	return hugoArticle, dateTime, nil
 }
 

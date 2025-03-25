@@ -41,6 +41,7 @@ func NewImageDownloader(reporter reporter.Reporter, timeoutSec int, maxConcurren
 }
 
 // ProcessHTMLImages はHTML内の画像を検出してダウンロードし、パスを書き換えたHTMLを返す
+// ProcessHTMLImages はHTML内の画像を検出してダウンロードし、パスを書き換えたHTMLを返す
 func (d *ImageDownloader) ProcessHTMLImages(content string, outputDir string) (string, error) {
 	if content == "" {
 		return content, nil
@@ -84,6 +85,10 @@ func (d *ImageDownloader) ProcessHTMLImages(content string, outputDir string) (s
 		// 3. バックグラウンド画像（CSSスタイル内）
 		bgRe := regexp.MustCompile(`background(-image)?\s*:\s*url\(['"]*` + escapedURL + `['"]*\)`)
 		processedContent = bgRe.ReplaceAllString(processedContent, `background$1: url("`+newPath+`")`)
+
+		// 4. MovableType形式の画像フィールド
+		mtRe := regexp.MustCompile(`(?m)^IMAGE:\s*` + escapedURL + `\s*$`)
+		processedContent = mtRe.ReplaceAllString(processedContent, `IMAGE: `+newPath)
 	}
 
 	return processedContent, nil
@@ -119,6 +124,23 @@ func (d *ImageDownloader) extractImageURLs(content string) []string {
 
 			if d.reporter != nil {
 				d.reporter.PrintInfo("Markdown画像URLを検出: %s", cleanURL)
+			}
+		}
+	}
+
+	// 3. MovableType形式の画像フィールドを検出
+	mtImgRe := regexp.MustCompile(`(?m)^IMAGE:\s*(.+)$`)
+	mtMatches := mtImgRe.FindAllStringSubmatch(content, -1)
+
+	for _, match := range mtMatches {
+		if len(match) >= 2 && match[1] != "" {
+			cleanURL := strings.TrimSpace(match[1])
+			if cleanURL != "" {
+				urlMap[cleanURL] = true
+
+				if d.reporter != nil {
+					d.reporter.PrintInfo("MovableType画像URLを検出: %s", cleanURL)
+				}
 			}
 		}
 	}
@@ -224,13 +246,9 @@ func (d *ImageDownloader) downloadImage(imgURL string, outputDir string) (string
 	destPath := filepath.Join(outputDir, fileName)
 
 	// ファイルが既に存在するか確認
-	if _, err := os.Stat(destPath); err == nil {
-		// ファイルが既に存在する場合
-		fileInfo, err := os.Stat(destPath)
-		if err == nil && fileInfo.Size() > 0 {
-			d.reporter.PrintInfo("ファイルが既に存在するためスキップ: %s", destPath)
-			return fileName, nil // ダウンロードせずに既存のファイル名を返す
-		}
+	if fileInfo, err := os.Stat(destPath); err == nil && fileInfo.Size() > 0 {
+		d.reporter.PrintInfo("ファイルが既に存在するためスキップ: %s", destPath)
+		return fileName, nil // ダウンロードせずに既存のファイル名を返す
 	}
 
 	d.reporter.PrintInfo("ダウンロード開始: %s -> %s", imgURL, destPath)
