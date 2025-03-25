@@ -18,15 +18,25 @@ type Config struct {
 
 	// 将来の拡張用
 	Verbose bool
+
+	// 追加: 画像ダウンロード関連のフィールド
+	DownloadImages bool
+	ImageTimeout   int
+	MaxConcurrent  int
 }
 
 // NewDefaultConfig はデフォルト設定を持つConfigを返す
 func NewDefaultConfig() *Config {
 	return &Config{
-		OutputDir:    "output",
-		TemplateFile: "templates/hugo.tmpl",
-		ErrorMode:    mt2hugo.ReturnHTML,
-		Verbose:      false,
+		OutputDir:      "output",
+		TemplateFile:   "templates/hugo.tmpl",
+		ErrorMode:      mt2hugo.ReturnHTML,
+		Verbose:        false,
+		NoMarkdown:     false,
+		FormatHTML:     false,
+		DownloadImages: false,
+		ImageTimeout:   30, // 30秒
+		MaxConcurrent:  5,  // 同時5件まで
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"text/template"
 
 	"mt2hugo/converter/html"
+	"mt2hugo/downloader"
 	"mt2hugo/fs"
 	"mt2hugo/generator"
 	"mt2hugo/internal/config"
@@ -26,6 +27,7 @@ type Components struct {
 	Validator        validator.ArticleValidator
 	Transformer      *mt2hugo.Transformer
 	FileGenerator    *generator.FileGenerator
+	ImageDownloader  *downloader.ImageDownloader
 }
 
 // SetupProcessingComponents は記事処理に必要なコンポーネントをセットアップする
@@ -36,12 +38,26 @@ func (c *Components) SetupProcessingComponents(articleCount int, cfg *config.Con
 	// バリデーターの初期化
 	c.Validator = CreateValidator(c.ProgressReporter)
 
+	// 画像ダウンローダーを初期化（ダウンロードが有効な場合）
+	if cfg.DownloadImages {
+		c.ImageDownloader = CreateImageDownloader(c.ProgressReporter, cfg)
+
+		// 既に作成済みのFileGeneratorに画像ダウンローダーを設定
+		c.FileGenerator = CreateFileGenerator(
+			c.FileSystem,
+			c.Template,
+			cfg.OutputDir,
+			c.ImageDownloader,
+		)
+	}
+
 	// トランスフォーマーの初期化
 	c.Transformer = CreateTransformer(
 		cfg,
 		c.HTMLConverter,
 		c.ProgressReporter,
 		c.Validator,
+		c.ImageDownloader,
 	)
 }
 
@@ -75,7 +91,13 @@ func CreateValidator(reporter reporter.Reporter) validator.ArticleValidator {
 }
 
 // CreateTransformer は変換器を作成
-func CreateTransformer(cfg *config.Config, htmlConverter *html.HTMLToMarkdownConverter, reporter reporter.Reporter, validator validator.ArticleValidator) *mt2hugo.Transformer {
+func CreateTransformer(
+	cfg *config.Config,
+	htmlConverter *html.HTMLToMarkdownConverter,
+	reporter reporter.Reporter,
+	validator validator.ArticleValidator,
+	imageDownloader *downloader.ImageDownloader,
+) *mt2hugo.Transformer {
 	return mt2hugo.NewTransformer(
 		htmlConverter,
 		reporter,
@@ -83,12 +105,23 @@ func CreateTransformer(cfg *config.Config, htmlConverter *html.HTMLToMarkdownCon
 		cfg.NoMarkdown,
 		cfg.FormatHTML,
 		cfg.ErrorMode,
+		imageDownloader,
+		cfg.DownloadImages,
 	)
 }
 
 // CreateFileGenerator はファイル生成器を作成
-func CreateFileGenerator(fs fs.FileSystem, tmpl *template.Template, outputDir string) *generator.FileGenerator {
-	return generator.NewFileGenerator(fs, tmpl, outputDir)
+func CreateFileGenerator(fs fs.FileSystem, tmpl *template.Template, outputDir string, imageDownloader *downloader.ImageDownloader) *generator.FileGenerator {
+	return generator.NewFileGenerator(fs, tmpl, outputDir, imageDownloader)
+}
+
+// CreateImageDownloader は画像ダウンローダーを作成
+func CreateImageDownloader(reporter reporter.Reporter, cfg *config.Config) *downloader.ImageDownloader {
+	return downloader.NewImageDownloader(
+		reporter,
+		cfg.ImageTimeout,
+		cfg.MaxConcurrent,
+	)
 }
 
 // LoadMTArticles はMovable Typeの記事をロード
@@ -124,6 +157,7 @@ func CreateComponents(cfg *config.Config) (*Components, error) {
 		components.FileSystem,
 		components.Template,
 		cfg.OutputDir,
+		nil,
 	)
 
 	// 進捗レポーターとバリデーターは記事数が必要なため後で初期化します

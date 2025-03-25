@@ -5,7 +5,8 @@ import (
 	"strings"
 	"time"
 
-	"mt2hugo/converter" // インターフェースをインポート
+	"mt2hugo/converter"  // インターフェースをインポート
+	"mt2hugo/downloader" // 追加
 	"mt2hugo/models"
 	"mt2hugo/reporter"
 	"mt2hugo/transformer"
@@ -17,34 +18,36 @@ import (
 type ErrorHandlingMode int
 
 const (
-	// ReturnHTML はエラー時に元のHTMLを返す
-	ReturnHTML ErrorHandlingMode = iota
-	// ReturnError はエラー時にエラーを返す（処理を中止する）
-	ReturnError
-	// ReturnPartial はエラー時に部分的な変換結果を返す
+	ReturnError ErrorHandlingMode = iota
+	ReturnHTML
 	ReturnPartial
 )
 
 // Transformer は移行処理を行う変換器
 type Transformer struct {
-	htmlConverter     converter.HTMLConverter // インターフェースを使用
+	htmlConverter     converter.HTMLConverter
 	reporter          reporter.Reporter
 	validator         validator.ArticleValidator
 	noMarkdown        bool
 	formatHTML        bool
-	errorHandlingMode ErrorHandlingMode // 新しいフィールド
+	errorHandlingMode ErrorHandlingMode
+	imageDownloader   *downloader.ImageDownloader
+	downloadImages    bool
 }
 
-var _ transformer.ArticleTransformer = (*Transformer)(nil) // インターフェース実装チェック
+// コンパイラによるインターフェース実装チェック
+var _ transformer.ArticleTransformer = (*Transformer)(nil)
 
 // NewTransformer は新しいTransformerを作成する
 func NewTransformer(
-	htmlConverter converter.HTMLConverter, // インターフェースを使用
+	htmlConverter converter.HTMLConverter,
 	reporter reporter.Reporter,
 	validator validator.ArticleValidator,
 	noMarkdown bool,
 	formatHTML bool,
-	errorMode ErrorHandlingMode, // 新しいパラメータ
+	errorMode ErrorHandlingMode,
+	imageDownloader *downloader.ImageDownloader,
+	downloadImages bool,
 ) *Transformer {
 	return &Transformer{
 		htmlConverter:     htmlConverter,
@@ -53,6 +56,8 @@ func NewTransformer(
 		noMarkdown:        noMarkdown,
 		formatHTML:        formatHTML,
 		errorHandlingMode: errorMode,
+		imageDownloader:   imageDownloader,
+		downloadImages:    downloadImages,
 	}
 }
 
@@ -112,43 +117,34 @@ func (t *Transformer) processContent(content string) (string, error) {
 		return "", nil
 	}
 
-	// Markdown変換が無効の場合
-	if t.noMarkdown {
-		if t.formatHTML {
-			formatted, err := t.htmlConverter.FormatHTMLWithIndentation(content)
-			if err != nil {
-				if t.reporter != nil {
-					t.reporter.PrintWarning("HTML整形エラー: %w", err)
-				}
-				// HTML整形に失敗した場合は元のHTMLを返す
+	processedContent := content
+
+	// Markdownへの変換処理
+	if !t.noMarkdown {
+		var err error
+		processedContent, err = t.htmlConverter.ConvertHTMLToMarkdown(processedContent)
+		if err != nil {
+			switch t.errorHandlingMode {
+			case ReturnError:
+				return "", fmt.Errorf("Markdown変換エラー: %w", err)
+			case ReturnHTML:
+				t.reporter.PrintWarning("Markdown変換に失敗しました。HTMLをそのまま出力します: %v", err)
 				return content, nil
+			case ReturnPartial:
+				t.reporter.PrintWarning("Markdown変換が一部失敗しました。部分的な結果を出力します: %v", err)
+				return processedContent, nil
 			}
-			return formatted, nil
 		}
-		return content, nil
-	}
-
-	// Markdown変換を試みる
-	converted, err := t.htmlConverter.ConvertHTMLToMarkdown(content)
-
-	// エラーが発生した場合、エラー処理モードに応じて対応
-	if err != nil {
-		if t.reporter != nil {
-			t.reporter.PrintWarning("Markdown変換エラー: %w", err)
-		}
-
-		switch t.errorHandlingMode {
-		case ReturnError:
-			// エラーを呼び出し元に返す（処理中止）
-			if t.reporter != nil {
-				t.reporter.PrintInfo("エラー処理モード: 処理を中止します")
-			}
-			return "", fmt.Errorf("Markdown変換エラー: %w", err)
+	} else if t.formatHTML {
+		// HTMLフォーマット処理
+		var err error
+		processedContent, err = t.htmlConverter.FormatHTMLWithIndentation(processedContent)
+		if err != nil {
+			t.reporter.PrintWarning("HTML整形に失敗しました。整形なしで出力します: %v", err)
 		}
 	}
 
-	// 変換成功の場合
-	return converted, nil
+	return processedContent, nil
 }
 
 // createBaseHugoArticle は基本的なHugo記事データを作成する

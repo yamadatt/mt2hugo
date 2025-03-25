@@ -14,6 +14,7 @@ var (
 	ErrValidation     = errors.New("検証エラー")
 	ErrProcessing     = errors.New("処理エラー")
 	ErrHTMLConversion = errors.New("HTML変換エラー")
+	ErrImageDownload  = errors.New("画像ダウンロードエラー")
 )
 
 // Wrap はエラーをラップする

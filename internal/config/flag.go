@@ -17,6 +17,11 @@ func ParseFlags() (*Config, error) {
 	flag.StringVar(&cfg.OutputDir, "output", cfg.OutputDir, "出力先ディレクトリを指定します")
 	flag.BoolVar(&cfg.Verbose, "verbose", cfg.Verbose, "詳細なログを出力します")
 
+	// 追加: 画像ダウンロード関連のフラグ
+	flag.BoolVar(&cfg.DownloadImages, "download-images", cfg.DownloadImages, "記事内の画像をダウンロードします")
+	flag.IntVar(&cfg.MaxConcurrent, "max-concurrent", cfg.MaxConcurrent, "同時ダウンロード数を指定します（デフォルト: 5）")
+	flag.IntVar(&cfg.ImageTimeout, "image-timeout", cfg.ImageTimeout, "画像ダウンロードのタイムアウト秒数（デフォルト: 30）")
+
 	// エラー処理モード
 	errorModeStr := flag.String("error-mode", "html", "Markdown変換エラー時の挙動: html(デフォルト), error, partial")
 
@@ -55,6 +60,9 @@ func GetUsage() string {
   --output <DIR>     出力先ディレクトリを指定します (デフォルト: "output")
   --error-mode MODE  Markdown変換エラー時の挙動: html(デフォルト), error, partial
   --verbose          詳細なログを出力します
+  --download-images  記事内の画像をダウンロードします
+  --max-concurrent   同時ダウンロード数を指定します（デフォルト: 5）
+  --image-timeout    画像ダウンロードのタイムアウト秒数（デフォルト: 30）
   --help             使用法を表示します
 `
 }

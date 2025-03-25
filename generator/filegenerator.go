@@ -7,6 +7,7 @@ import (
 	"text/template"
 	"time"
 
+	"mt2hugo/downloader" // 追加
 	"mt2hugo/fs"
 	"mt2hugo/models" // hugoパッケージからmodelsパッケージに変更
 	"mt2hugo/util"
@@ -14,17 +15,24 @@ import (
 
 // FileGenerator はHugo記事ファイルの生成を担当する
 type FileGenerator struct {
-	fs      fs.FileSystem
-	tmpl    *template.Template
-	baseDir string
+	fs              fs.FileSystem
+	tmpl            *template.Template
+	baseDir         string
+	imageDownloader *downloader.ImageDownloader // 追加
 }
 
 // NewFileGenerator は新しいFileGeneratorを作成する
-func NewFileGenerator(fileSystem fs.FileSystem, tmpl *template.Template, baseDir string) *FileGenerator {
+func NewFileGenerator(
+	fileSystem fs.FileSystem,
+	tmpl *template.Template,
+	baseDir string,
+	imageDownloader *downloader.ImageDownloader, // 追加
+) *FileGenerator {
 	return &FileGenerator{
-		fs:      fileSystem,
-		tmpl:    tmpl,
-		baseDir: baseDir,
+		fs:              fileSystem,
+		tmpl:            tmpl,
+		baseDir:         baseDir,
+		imageDownloader: imageDownloader,
 	}
 }
 
@@ -40,9 +48,34 @@ func (g *FileGenerator) GenerateFile(article models.HugoArticle, dateTime time.T
 		return "", fmt.Errorf("ディレクトリ作成エラー: %w", err)
 	}
 
+	// 追加: 画像ダウンロード処理
+	processedArticle := article
+	if g.imageDownloader != nil {
+		// 本文の画像処理
+		if article.Body != "" {
+			processedBody, err := g.imageDownloader.ProcessHTMLImages(article.Body, dirPath)
+			if err != nil {
+				// エラーは記録するが処理は続行
+				fmt.Printf("警告: 本文の画像ダウンロード中にエラー: %v\n", err)
+			} else {
+				processedArticle.Body = processedBody
+			}
+		}
+
+		// 拡張本文の画像処理
+		if article.ExtendedBody != "" {
+			processedExtBody, err := g.imageDownloader.ProcessHTMLImages(article.ExtendedBody, dirPath)
+			if err != nil {
+				fmt.Printf("警告: 拡張本文の画像ダウンロード中にエラー: %v\n", err)
+			} else {
+				processedArticle.ExtendedBody = processedExtBody
+			}
+		}
+	}
+
 	// テンプレートを使って出力内容を生成
 	var output strings.Builder
-	if err := g.tmpl.Execute(&output, article); err != nil {
+	if err := g.tmpl.Execute(&output, processedArticle); err != nil {
 		return "", fmt.Errorf("テンプレート実行エラー: %w", err)
 	}
 

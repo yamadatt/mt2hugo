@@ -36,6 +36,16 @@ func main() {
 		}
 	}
 
+	if cfg.DownloadImages {
+		fmt.Println("画像ダウンロードを有効にしました。画像は記事と同じディレクトリに保存されます。")
+		fmt.Printf("画像ダウンロード設定: 同時 %d 件まで、タイムアウト %d 秒\n",
+			cfg.MaxConcurrent, cfg.ImageTimeout)
+
+		if cfg.Verbose {
+			fmt.Println("詳細モード: 画像ダウンロードの詳細ログが表示されます。")
+		}
+	}
+
 	start := time.Now()
 
 	// コンポーネントの初期化
