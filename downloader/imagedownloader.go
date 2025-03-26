@@ -258,8 +258,14 @@ func (d *ImageDownloader) downloadImages(urls []string, outputDir string) (map[s
 
 // DownloadImage は1つの画像をダウンロードする（公開インターフェースメソッド）
 func (d *ImageDownloader) DownloadImage(imgURL string, outputDir string) (string, error) {
-	// 元のprivateメソッドと同じ実装
-	return d.downloadImage(imgURL, outputDir)
+	// モックを使うため、自分自身ではなくインターフェースを通して呼び出す
+	// 自分自身がダウンローダーの場合は自分のdownloadImageを呼ぶ
+	// モックがダウンローダーの場合はモックのDownloadImageが呼ばれる
+	if d.downloader == d {
+		return d.downloadImage(imgURL, outputDir)
+	}
+	// この判定がないと無限ループになるため注意
+	return d.downloader.DownloadImage(imgURL, outputDir)
 }
 
 // SetDownloader はダウンロード処理のインターフェースを設定する
