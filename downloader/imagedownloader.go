@@ -15,6 +15,11 @@ import (
 	"github.com/imroc/req/v3"
 )
 
+// ImageDownloaderInterface はダウンロード処理のインターフェース
+type ImageDownloaderInterface interface {
+	DownloadImage(imgURL string, outputDir string) (string, error)
+}
+
 // ImageDownloader は画像をダウンロードするための構造体
 type ImageDownloader struct {
 	reporter      reporter.Reporter
@@ -23,6 +28,7 @@ type ImageDownloader struct {
 	maxConcurrent int
 	downloadCache map[string]string // URL -> ローカルパス
 	mutex         sync.Mutex
+	downloader    ImageDownloaderInterface // 追加：実際のダウンロード処理を行うインターフェース
 }
 
 // NewImageDownloader は新しいImageDownloaderを作成する
@@ -31,13 +37,18 @@ func NewImageDownloader(reporter reporter.Reporter, timeoutSec int, maxConcurren
 		SetTimeout(time.Duration(timeoutSec) * time.Second).
 		SetUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
 
-	return &ImageDownloader{
+	downloader := &ImageDownloader{
 		reporter:      reporter,
 		client:        client,
 		timeout:       time.Duration(timeoutSec) * time.Second,
 		maxConcurrent: maxConcurrent,
 		downloadCache: make(map[string]string),
 	}
+
+	// 自分自身をダウンローダーとして設定
+	downloader.downloader = downloader
+
+	return downloader
 }
 
 // ProcessHTMLImages はHTML内の画像を検出してダウンロードし、パスを書き換えたHTMLを返す
@@ -163,6 +174,21 @@ func (d *ImageDownloader) extractImageURLs(content string) []string {
 		}
 	}
 
+	// バックグラウンド画像URLを検出
+	bgRe := regexp.MustCompile(`background(-image)?\s*:\s*url\s*\(['"]?([^'")]+)['"]?\)`)
+	bgMatches := bgRe.FindAllStringSubmatch(content, -1)
+
+	for _, match := range bgMatches {
+		if len(match) >= 3 && match[2] != "" {
+			cleanURL := strings.TrimSpace(match[2])
+			urlMap[cleanURL] = true
+
+			if d.reporter != nil {
+				d.reporter.PrintInfo("バックグラウンド画像URLを検出: %s", cleanURL)
+			}
+		}
+	}
+
 	// マップからスライスに変換
 	var urls []string
 	for url := range urlMap {
@@ -204,7 +230,7 @@ func (d *ImageDownloader) downloadImages(urls []string, outputDir string) (map[s
 			sem <- struct{}{}        // セマフォ取得
 			defer func() { <-sem }() // セマフォ解放
 
-			localPath, err := d.downloadImage(url, outputDir)
+			localPath, err := d.downloader.DownloadImage(url, outputDir)
 			if err != nil {
 				errorsMu.Lock()
 				downloadErrors = append(downloadErrors, fmt.Errorf("URL: %s - %v", url, err))
@@ -230,7 +256,18 @@ func (d *ImageDownloader) downloadImages(urls []string, outputDir string) (map[s
 	return replacements, nil
 }
 
-// downloadImage は1つの画像をダウンロードする
+// DownloadImage は1つの画像をダウンロードする（公開インターフェースメソッド）
+func (d *ImageDownloader) DownloadImage(imgURL string, outputDir string) (string, error) {
+	// 元のprivateメソッドと同じ実装
+	return d.downloadImage(imgURL, outputDir)
+}
+
+// SetDownloader はダウンロード処理のインターフェースを設定する
+func (d *ImageDownloader) SetDownloader(downloader ImageDownloaderInterface) {
+	d.downloader = downloader
+}
+
+// downloadImage は1つの画像をダウンロードする（内部実装）
 func (d *ImageDownloader) downloadImage(imgURL string, outputDir string) (string, error) {
 	// URLパース
 	parsedURL, err := url.Parse(imgURL)
