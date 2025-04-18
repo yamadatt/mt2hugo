@@ -198,6 +198,11 @@ func (d *ImageDownloader) extractImageURLs(content string) []string {
 	return urls
 }
 
+// ExtractImageURLs はHTML内の画像URLを抽出する - 公開メソッド
+func (d *ImageDownloader) ExtractImageURLs(content string) []string {
+	return d.extractImageURLs(content)
+}
+
 // downloadImages は画像を並行ダウンロードする
 func (d *ImageDownloader) downloadImages(urls []string, outputDir string) (map[string]string, error) {
 	replacements := make(map[string]string)

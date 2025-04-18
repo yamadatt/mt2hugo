@@ -99,8 +99,9 @@ func (t *Transformer) Transform(article interface{}) (models.HugoArticle, time.T
 	hugoArticle.Body = processedBody
 
 	// 拡張本文の処理
+	processedExtendedBody := ""
 	if mtArticle.ExtendedBody != "" {
-		processedExtendedBody, err := t.processContent(mtArticle.ExtendedBody)
+		processedExtendedBody, err = t.processContent(mtArticle.ExtendedBody)
 		if err != nil {
 			return models.HugoArticle{}, time.Time{}, fmt.Errorf("拡張本文処理エラー: %w", err)
 		}
@@ -108,10 +109,32 @@ func (t *Transformer) Transform(article interface{}) (models.HugoArticle, time.T
 	}
 
 	// IMAGEフィールドの処理
-	if mtArticle.Image != "" && t.downloadImages && t.imageDownloader != nil {
+	if mtArticle.Image == "" && t.imageDownloader != nil {
+		t.reporter.PrintInfo("画像ダウンローダーが利用可能です。本文から画像を検索します。")
+		// 本文から画像URLを抽出
+		imgURLs := t.imageDownloader.ExtractImageURLs(processedBody)
+		t.reporter.PrintInfo("本文から %d 件の画像URLを抽出しました", len(imgURLs))
+
+		// 拡張本文がある場合はそこからも抽出
+		if len(imgURLs) == 0 && processedExtendedBody != "" {
+			imgURLs = t.imageDownloader.ExtractImageURLs(processedExtendedBody)
+			t.reporter.PrintInfo("拡張本文から %d 件の画像URLを抽出しました", len(imgURLs))
+		}
+
+		// 最初の画像を使用
+		if len(imgURLs) > 0 {
+			hugoArticle.Image = imgURLs[0]
+			t.reporter.PrintInfo("記事「%s」の最初の画像を自動検出: %s", mtArticle.Title, imgURLs[0])
+		} else {
+			t.reporter.PrintInfo("記事「%s」から画像を検出できませんでした", mtArticle.Title)
+		}
+	} else if mtArticle.Image == "" {
+		t.reporter.PrintInfo("画像ダウンローダーが利用できないため、画像の自動検出をスキップします")
+	} else if mtArticle.Image != "" && t.downloadImages && t.imageDownloader != nil {
 		// 画像のダウンロードはまだ行わない（出力ディレクトリが決定していないため）
 		// ここではImageフィールドをそのまま設定
 		hugoArticle.Image = mtArticle.Image
+		t.reporter.PrintInfo("記事「%s」の既存の画像を使用: %s", mtArticle.Title, mtArticle.Image)
 	} else {
 		hugoArticle.Image = mtArticle.Image
 	}

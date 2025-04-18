@@ -54,7 +54,7 @@ go run main.go [オプション] <Movable_Typeエクスポートファイルの�
 - --output <ディレクトリ>: 出力先ディレクトリを指定します (デフォルト: "output")
 - --error-mode <モード>: Markdown変換エラー時の挙動を指定します (html, error, partial)
 - --verbose: 詳細なログを出力します
-- --download-images: 記事内の画像をダウンロードします
+- --download-images: 記事内の画像をダウンロードします　画像のダウンロード時、アイキャッチがない場合は最初の画像をアイキャッチにします。
 - --max-concurrent <数値>: 同時ダウンロード数を指定します（デフォルト: 5）
 - --image-timeout <秒数>: 画像ダウンロードのタイムアウト秒数（デフォルト: 30）
 - --help: 使用法を表示します
