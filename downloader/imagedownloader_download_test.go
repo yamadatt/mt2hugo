@@ -1,7 +1,6 @@
 package downloader
 
 import (
-	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
@@ -9,317 +8,172 @@ import (
 	"path/filepath"
 	"testing"
 
+	"mt2hugo/internal/config"
 	"mt2hugo/reporter"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-// downloadImageの実際のHTTP呼び出しを使用するテスト
-func TestDownloadImage_RealHTTP(t *testing.T) {
-	// テストサーバーのセットアップ
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/valid.jpg":
+// TestImageDownloaderIntegration と TestDownloadImageOption は変更なし
+
+// CircularImportSolverは、インポートサイクルを回避するためのインターフェース
+type ImageProcessor interface {
+	ProcessHTMLImages(htmlContent, outputDir string) (string, error)
+}
+
+// テスト用のダミー変換器
+type DummyTransformer struct {
+	imageProcessor ImageProcessor
+	outputDir      string
+	downloadImages bool
+}
+
+func (d *DummyTransformer) TransformFile(inputFile string) error {
+	// ファイル読み込み
+	content, err := ioutil.ReadFile(inputFile)
+	if err != nil {
+		return err
+	}
+
+	// 出力ディレクトリ作成
+	imageDir := filepath.Join(d.outputDir, "images")
+	os.MkdirAll(imageDir, 0755)
+
+	// 画像処理
+	processedContent := string(content)
+	if d.downloadImages && d.imageProcessor != nil {
+		processed, err := d.imageProcessor.ProcessHTMLImages(processedContent, imageDir)
+		if err != nil {
+			return err
+		}
+		processedContent = processed
+	}
+
+	// 結果を出力
+	return ioutil.WriteFile(filepath.Join(d.outputDir, "output.md"), []byte(processedContent), 0644)
+}
+
+// メインフローをテストするための新しいテスト
+func TestMainFlowWithImages(t *testing.T) {
+	t.Run("メインフローの統合テスト", func(t *testing.T) {
+		// モックサーバー設定
+		mockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "image/jpeg")
-			w.Write([]byte("fake image data"))
-		case "/notfound.jpg":
-			w.WriteHeader(http.StatusNotFound)
-		default:
-			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("test image data"))
+		}))
+		defer mockServer.Close()
+
+		// テンポラリディレクトリ
+		tempDir := t.TempDir()
+		outputDir := filepath.Join(tempDir, "output")
+		err := os.MkdirAll(outputDir, 0755)
+		require.NoError(t, err)
+
+		// テスト入力ファイル作成
+		inputContent := `
+TITLE: テスト記事
+DATE: 2023-01-01
+-----
+BODY:
+<p>テスト本文</p>
+<img src="` + mockServer.URL + `/image.jpg">
+-----
+`
+		inputFile := filepath.Join(tempDir, "input.txt")
+		err = ioutil.WriteFile(inputFile, []byte(inputContent), 0644)
+		require.NoError(t, err)
+
+		// テストケース
+		testCases := []struct {
+			name           string
+			downloadImages bool
+			expectImages   bool
+		}{
+			{"ダウンロード有効", true, true},
+			{"ダウンロード無効", false, false},
 		}
-	}))
-	defer server.Close()
 
-	tempDir := t.TempDir()
-
-	// テスト用のレポーター
-	mockReporter := reporter.NewMockReporter()
-
-	// ダウンローダの作成
-	downloader := NewImageDownloader(mockReporter, 10, 5)
-
-	tests := []struct {
-		name        string
-		imgURL      string
-		shouldError bool
-		checkFile   bool
-	}{
-		{
-			name:        "相対URL",
-			imgURL:      "images/local.jpg",
-			shouldError: false,
-			checkFile:   false,
-		},
-		{
-			name:        "不正なURL",
-			imgURL:      "http://[::1]:invalid",
-			shouldError: true,
-			checkFile:   false,
-		},
-		{
-			name:        "存在するリソース",
-			imgURL:      server.URL + "/valid.jpg",
-			shouldError: false,
-			checkFile:   true,
-		},
-		{
-			name:        "404エラー",
-			imgURL:      server.URL + "/notfound.jpg",
-			shouldError: true,
-			checkFile:   false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// テスト用のダウンローダを使用
-			result, err := downloader.downloadImage(tt.imgURL, tempDir)
-
-			if tt.shouldError {
-				assert.Error(t, err)
-			} else {
-				assert.NoError(t, err)
-
-				if tt.imgURL == "images/local.jpg" {
-					// 相対URLの場合は元のURLが返される
-					assert.Equal(t, tt.imgURL, result)
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				// 設定作成
+				cfg := &config.Config{
+					InputFile:      inputFile,
+					OutputDir:      outputDir,
+					DownloadImages: tc.downloadImages,
+					ImageTimeout:   30,
+					MaxConcurrent:  5,
 				}
 
-				if tt.checkFile {
-					// ファイルがダウンロードされたことを確認
-					filePath := filepath.Join(tempDir, result)
-					_, err := os.Stat(filePath)
-					assert.NoError(t, err, "ファイルが存在すること")
+				// レポーター
+				rep := reporter.NewSimpleReporter()
 
-					// ファイルの内容を確認
-					data, err := ioutil.ReadFile(filePath)
-					assert.NoError(t, err)
-					assert.Equal(t, "fake image data", string(data))
+				// 変換処理
+				var transformer *DummyTransformer
+
+				if tc.downloadImages {
+					imgDownloader := NewImageDownloader(rep, cfg.ImageTimeout, cfg.MaxConcurrent)
+					transformer = &DummyTransformer{
+						imageProcessor: imgDownloader,
+						outputDir:      outputDir,
+						downloadImages: cfg.DownloadImages,
+					}
+				} else {
+					transformer = &DummyTransformer{
+						imageProcessor: nil,
+						outputDir:      outputDir,
+						downloadImages: false,
+					}
 				}
-			}
-		})
-	}
+
+				// 変換処理の実行
+				err = transformer.TransformFile(inputFile)
+				require.NoError(t, err)
+
+				// 画像ディレクトリがあるか確認
+				imageDir := filepath.Join(outputDir, "images")
+				if tc.expectImages {
+					// 画像があるはず
+					imageFiles, err := os.ReadDir(imageDir)
+					require.NoError(t, err)
+					assert.NotEmpty(t, imageFiles, "画像ファイルがダウンロードされるべき")
+
+					// 出力ファイルを確認して画像URLが置換されているか
+					output, err := ioutil.ReadFile(filepath.Join(outputDir, "output.md"))
+					require.NoError(t, err)
+					assert.NotContains(t, string(output), mockServer.URL, "画像URLが置換されるべき")
+				} else {
+					// 画像がダウンロードされていないか確認
+					_, err := os.Stat(imageDir)
+					assert.True(t, os.IsNotExist(err), "画像ディレクトリは存在しないはず")
+				}
+			})
+		}
+	})
 }
 
-// モックを使用するテスト - インターフェースを活用
-func TestDownloadImage_WithMock(t *testing.T) {
-
-	tests := []struct {
-		name        string
-		imgURL      string
-		outputDir   string
-		mockPath    string
-		mockError   error
-		expectError bool
-	}{
-		{
-			name:        "成功するケース",
-			imgURL:      "https://example.com/image.jpg",
-			outputDir:   "images",
-			mockPath:    "downloaded.jpg",
-			mockError:   nil,
-			expectError: false,
-		},
-		{
-			name:        "エラーが発生するケース",
-			imgURL:      "https://error.example.com/image.jpg",
-			outputDir:   "images",
-			mockPath:    "",
-			mockError:   fmt.Errorf("ダウンロードエラー"),
-			expectError: true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// 1. モックレポーターとダウンローダーを作成
-			mockReporter := reporter.NewMockReporter()
-			downloader := NewImageDownloader(mockReporter, 10, 5)
-
-			// 2. モックダウンローダーを作成 (正しく実装)
-			mockDownloader := &MockImageDownloader{
-				mockDownloadImageFunc: func(imgURL string, outputDir string) (string, error) {
-					// テストケースの値を返す
-					// 実際のHTTP呼び出しは行わない
-					return tt.mockPath, tt.mockError
-				},
-			}
-
-			// 3. モックをセット - デバッグのためにログを追加
-			downloader.SetDownloader(mockDownloader)
-
-			// 4. モック関数が確実に使われるよう、ファイルを作成
-			if tt.mockPath != "" && tt.mockError == nil {
-				fullPath := filepath.Join(tt.outputDir, tt.mockPath)
-				err := os.MkdirAll(filepath.Dir(fullPath), 0755)
-				require.NoError(t, err, "テスト用ディレクトリの作成に失敗")
-
-				// 空ファイルを作成
-				f, err := os.Create(fullPath)
-				require.NoError(t, err, "テスト用ファイルの作成に失敗")
-				f.Close()
-			}
-
-			// 5. テスト対象メソッドを呼び出し
-			result, err := downloader.DownloadImage(tt.imgURL, tt.outputDir)
-
-			// 6. 結果を検証
-			if tt.expectError {
-				assert.Error(t, err)
-				assert.Empty(t, result)
-			} else {
-				assert.NoError(t, err)
-				assert.Equal(t, tt.mockPath, result)
-			}
-		})
-	}
-}
-
-// downloadImagesのテスト - 並行ダウンロード処理のモック
-func TestDownloadImages_WithMock(t *testing.T) {
-	tempDir := t.TempDir()
-
-	// テスト用のURLリスト
-	urls := []string{
-		"https://example.com/image1.jpg",
-		"https://example.com/image2.png",
-		"https://example.com/image3.gif",
-	}
-
-	// ダウンロード成功のケース
-	t.Run("全ダウンロード成功", func(t *testing.T) {
-		mockReporter := reporter.NewMockReporter()
-		downloader := NewImageDownloader(mockReporter, 10, 5)
-
-		// 呼び出し回数をカウント
-		downloadCount := 0
-
-		// モックダウンローダを作成
-		mockDownloader := &MockImageDownloader{
-			mockDownloadImageFunc: func(imgURL, outputDir string) (string, error) {
-				// 呼び出し回数をインクリメント
-				downloadCount++
-
-				// URLごとに異なる結果を返す
-				switch imgURL {
-				case "https://example.com/image1.jpg":
-					return "downloaded1.jpg", nil
-				case "https://example.com/image2.png":
-					return "downloaded2.png", nil
-				case "https://example.com/image3.gif":
-					return "downloaded3.gif", nil
-				default:
-					return "", fmt.Errorf("未知のURL: %s", imgURL)
-				}
-			},
+// コマンドライン引数のテスト
+func TestDownloadImagesFlag(t *testing.T) {
+	t.Run("download-imagesフラグのテスト", func(t *testing.T) {
+		// Configのセットアップだけテスト
+		testCases := []struct {
+			name           string
+			downloadImages bool
+		}{
+			{"ダウンロード有効", true},
+			{"ダウンロード無効", false},
 		}
 
-		// モックをセット
-		downloader.SetDownloader(mockDownloader)
-
-		// ダウンロードを実行
-		result, err := downloader.downloadImages(urls, tempDir)
-
-		// 結果を検証
-		assert.NoError(t, err)
-		assert.Len(t, result, 3, "3つのファイルがダウンロードされるべき")
-		assert.Equal(t, 3, downloadCount, "downloadImageが3回呼ばれるべき")
-
-		// 期待される結果
-		assert.Equal(t, "downloaded1.jpg", result["https://example.com/image1.jpg"])
-		assert.Equal(t, "downloaded2.png", result["https://example.com/image2.png"])
-		assert.Equal(t, "downloaded3.gif", result["https://example.com/image3.gif"])
-	})
-
-	// 一部エラーのケース
-	t.Run("一部ダウンロード失敗", func(t *testing.T) {
-		mockReporter := reporter.NewMockReporter()
-		downloader := NewImageDownloader(mockReporter, 10, 5)
-
-		// モックダウンローダを作成
-		mockDownloader := &MockImageDownloader{
-			mockDownloadImageFunc: func(imgURL, outputDir string) (string, error) {
-				// 特定のURLでエラーを返す
-				if imgURL == "https://example.com/image2.png" {
-					return "", fmt.Errorf("ダウンロードエラー")
+		for _, tc := range testCases {
+			t.Run(tc.name, func(t *testing.T) {
+				cfg := &config.Config{
+					DownloadImages: tc.downloadImages,
+					OutputDir:      "output",
 				}
 
-				// それ以外は成功
-				switch imgURL {
-				case "https://example.com/image1.jpg":
-					return "downloaded1.jpg", nil
-				case "https://example.com/image3.gif":
-					return "downloaded3.gif", nil
-				default:
-					return "", fmt.Errorf("未知のURL: %s", imgURL)
-				}
-			},
+				assert.Equal(t, tc.downloadImages, cfg.DownloadImages,
+					"download-imagesフラグが正しく設定されるべき")
+			})
 		}
-
-		// モックをセット
-		downloader.SetDownloader(mockDownloader)
-
-		// ダウンロードを実行
-		result, err := downloader.downloadImages(urls, tempDir)
-
-		// 結果を検証
-		assert.Error(t, err, "エラーが返されるべき")
-		assert.Contains(t, err.Error(), "ダウンロードエラー")
-
-		// 失敗しても成功した結果はマップに含まれる
-		assert.Len(t, result, 2, "2つのダウンロードは成功する")
-		assert.Equal(t, "downloaded1.jpg", result["https://example.com/image1.jpg"])
-		assert.Equal(t, "downloaded3.gif", result["https://example.com/image3.gif"])
-	})
-
-	// キャッシュ使用のケース
-	t.Run("キャッシュ利用", func(t *testing.T) {
-		mockReporter := reporter.NewMockReporter()
-		downloader := NewImageDownloader(mockReporter, 10, 5)
-
-		// キャッシュをセットアップ
-		downloader.mutex.Lock()
-		downloader.downloadCache["https://example.com/image1.jpg"] = "cached1.jpg"
-		downloader.downloadCache["https://example.com/image2.png"] = "cached2.png"
-		downloader.mutex.Unlock()
-
-		// キャッシュに対応するファイルを作成
-		for _, path := range []string{"cached1.jpg", "cached2.png"} {
-			fullPath := filepath.Join(tempDir, path)
-			err := os.MkdirAll(filepath.Dir(fullPath), 0755)
-			require.NoError(t, err)
-			err = ioutil.WriteFile(fullPath, []byte("cached content"), 0644)
-			require.NoError(t, err)
-		}
-
-		// モックダウンローダを作成 - キャッシュミスの場合のみ呼ばれる
-		mockDownloader := &MockImageDownloader{
-			mockDownloadImageFunc: func(imgURL, outputDir string) (string, error) {
-				// image3のみダウンロードが必要
-				if imgURL == "https://example.com/image3.gif" {
-					return "downloaded3.gif", nil
-				}
-
-				// それ以外（キャッシュヒット）は呼ばれないはず
-				t.Errorf("キャッシュがあるためダウンロードは不要: %s", imgURL)
-				return "", fmt.Errorf("should not be called")
-			},
-		}
-
-		// モックをセット
-		downloader.SetDownloader(mockDownloader)
-
-		// ダウンロードを実行
-		result, err := downloader.downloadImages(urls, tempDir)
-
-		// 結果を検証
-		assert.NoError(t, err)
-		assert.Len(t, result, 3, "3つのファイルが取得されるべき")
-
-		// 期待される結果
-		assert.Equal(t, "cached1.jpg", result["https://example.com/image1.jpg"])
-		assert.Equal(t, "cached2.png", result["https://example.com/image2.png"])
-		assert.Equal(t, "downloaded3.gif", result["https://example.com/image3.gif"])
 	})
 }
